@@ -1,0 +1,38 @@
+# lore knowledge-base CI check — copy into your repo as .github/workflows/lore-knowledge-check.yml
+# Validates: frontmatter legality + live code-anchors + zero drift between INDEX/rules/gate
+# files and the generated result + complete .gitattributes union entries.
+# Set LORE_PLUGIN_REPO/LORE_PLUGIN_REF below (or vendor the generator; see ci/README.md).
+name: lore knowledge check
+on:
+  pull_request:
+    paths:
+      - 'docs/ai-knowledge/**'
+      - '.claude/rules/knowledge/**'
+      # union entries are generator-owned artifact attributes — a PR that only touches the
+      # root .gitattributes (e.g. deletes a union line) must also run --check
+      - '.gitattributes'
+      # Trade-off: with these path filters, a pure-code PR that deletes/moves an anchored
+      # file will not trigger the live-anchor check (it gets caught on the next knowledge
+      # PR instead). The check runs in seconds — drop the whole `paths:` block to run it on
+      # every PR if you want anchor breakage caught immediately.
+env:
+  LORE_PLUGIN_REPO: notverysalty/lore-plugin   # the public lore-plugin repo (owner/name)
+  LORE_PLUGIN_REF: main   # pin to a release tag (e.g. v0.1.0) for reproducible CI
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Option A (vendored): a copy of the generator committed inside this repo
+      - name: lore --check (vendored generator)
+        if: ${{ hashFiles('docs/ai-knowledge/.lore/gen-knowledge-index.mjs') != '' }}
+        run: node docs/ai-knowledge/.lore/gen-knowledge-index.mjs . --check
+      # Option B (default): fetch the generator from the public lore-plugin repo — no token needed
+      - name: lore --check (fetched generator)
+        if: ${{ hashFiles('docs/ai-knowledge/.lore/gen-knowledge-index.mjs') == '' }}
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/${LORE_PLUGIN_REPO}/${LORE_PLUGIN_REF}/scripts/gen-knowledge-index.mjs" -o /tmp/lore-gen.mjs
+          node /tmp/lore-gen.mjs . --check

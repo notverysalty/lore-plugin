@@ -1,0 +1,6 @@
+interface:
+  display_name: "lore: init"
+  short_description: "Onboard the current repo to the lore knowledge base"
+  default_prompt: "Use $lore-init to onboard this repo: create the docs/ai-knowledge/ skeleton, pointer sections, and seed the first knowledge entries."
+policy:
+  allow_implicit_invocation: true

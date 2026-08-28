@@ -1,0 +1,17 @@
+{
+	"name": "lore-plugin",
+	"owner": {
+		"name": "yisakomi"
+	},
+	"description": "Marketplace for the lore plugin — a per-repo, PR-reviewed knowledge base engine for AI coding agents",
+	"plugins": [
+		{
+			"name": "lore",
+			"source": "./",
+			"description": "Knowledge engine for AI coding agents: auto-evaluates each substantial session for 'facts you cannot derive from the code', persists them to the repo's docs/ai-knowledge/, generates an index plus path-scoped retrieval rules, and reviews all knowledge through normal code PRs.",
+			"author": {
+				"name": "yisakomi"
+			}
+		}
+	]
+}

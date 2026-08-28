@@ -1,0 +1,6 @@
+interface:
+  display_name: "lore: memorize"
+  short_description: "Persist business knowledge learned this session into docs/ai-knowledge/"
+  default_prompt: "Use $lore-memorize to capture the 'facts you cannot derive from the code' learned this session into docs/ai-knowledge/. Quality over quantity."
+policy:
+  allow_implicit_invocation: true

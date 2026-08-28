@@ -1,0 +1,39 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          # Linux with a modern bash
+          - os: ubuntu-latest
+            bash: bash
+          # macOS system bash is 3.2 — the compatibility floor this project promises.
+          # $BASH must be the explicit /bin/bash: the runner's PATH also carries a
+          # Homebrew bash 5, which would silently defeat the point of this job.
+          - os: macos-latest
+            bash: /bin/bash
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Show bash version under test
+        run: ${{ matrix.bash }} --version | head -1
+      - name: Syntax checks
+        run: |
+          for f in scripts/*.sh codex/install.sh; do ${{ matrix.bash }} -n "$f"; done
+          node --check scripts/gen-knowledge-index.mjs
+      - name: Generator lock regression
+        run: ${{ matrix.bash }} scripts/test-gen-lock.sh
+      - name: Generator .gitattributes regression
+        run: ${{ matrix.bash }} scripts/test-gen-attrs.sh
+      - name: Write-gate regression
+        run: ${{ matrix.bash }} scripts/test-knowledge-write-gate.sh
+      - name: Hook-output regression (Stop gate JSON, path push, fresh-install stats)
+        run: ${{ matrix.bash }} scripts/test-hooks-output.sh

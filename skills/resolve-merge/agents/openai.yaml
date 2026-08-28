@@ -1,0 +1,6 @@
+interface:
+  display_name: "lore: resolve-merge"
+  short_description: "Semantically resolve git merge conflicts in knowledge files"
+  default_prompt: "Use $lore-resolve-merge to resolve merge conflicts under docs/ai-knowledge/: union-merge knowledge files (never drop entries) and rerun the generator for artifacts."
+policy:
+  allow_implicit_invocation: true

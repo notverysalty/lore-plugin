@@ -1,0 +1,6 @@
+interface:
+  display_name: "lore: set-language"
+  short_description: "Set the language knowledge is written in for this repo"
+  default_prompt: "Use $lore-set-language to set the knowledge language in docs/ai-knowledge/lore.json, optionally translating existing entries."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "lore: knowledge-consolidate"
+  short_description: "Periodic governance of the lore knowledge base"
+  default_prompt: "Use $lore-knowledge-consolidate to govern docs/ai-knowledge/: dedupe, resolve contradictions, polish low-hit entries, harvest pending, retire stale files, rebuild the index."
+policy:
+  allow_implicit_invocation: true
