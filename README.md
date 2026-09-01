@@ -1,5 +1,7 @@
 # lore
 
+English | [简体中文](README.zh-CN.md)
+
 A knowledge engine for AI coding agents: after every substantial coding session, the "facts you cannot derive from the code" get captured into the repo — and get read back on demand the next time they matter.
 
 - **Content lives in each repo** at `docs/ai-knowledge/` — plain, runtime-agnostic markdown, reviewed in normal code PRs
