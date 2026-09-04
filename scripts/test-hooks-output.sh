@@ -182,6 +182,24 @@ else
 	echo "FAIL T10 rollup: $(cat "$RJ" 2>/dev/null | head -c 300)"; fail=1
 fi
 
+# T10b churn control: re-exporting with no new usage must leave the committed file untouched
+# (an old `updated` stamp survives), so opted-in repos only diff when counts change
+jq '.updated = "2000-01-01"' "$RJ" > "$RJ.tmp" && mv "$RJ.tmp" "$RJ"
+out=$(cd "$T" && LORE_METRICS_USER=alice bash "$HERE/lore-stats.sh" export-summary "$REPO" 2>&1)
+if printf '%s' "$out" | grep -q 'unchanged' && [ "$(jq -r .updated "$RJ")" = "2000-01-01" ]; then
+	echo "PASS T10b re-export with no new usage: file not rewritten"
+else
+	echo "FAIL T10b: updated=$(jq -r .updated "$RJ") out=$out"; fail=1
+fi
+# T10c ...but a real change (one more load) rewrites it with today's stamp
+printf '{"event":"kb_load","repo":"%s","kb_repo":"%s","file":"t10.md","reason":"include","session":"sq","ts":"%s"}\n' "$RB" "$RB" "$NOW" >> "$LORE_DATA_DIR/metrics.jsonl"
+( cd "$T" && LORE_METRICS_USER=alice bash "$HERE/lore-stats.sh" export-summary "$REPO" >/dev/null 2>&1 )
+if [ "$(jq -r '.files["t10.md"].loads' "$RJ")" = "3" ] && [ "$(jq -r .updated "$RJ")" != "2000-01-01" ]; then
+	echo "PASS T10c re-export after new usage: rewritten (loads 3, fresh stamp)"
+else
+	echo "FAIL T10c: $(jq -c '{u:.updated, l:.files["t10.md"].loads}' "$RJ")"; fail=1
+fi
+
 # T11 team aggregation + never-loaded exclusion: a teammate's committed rollup must surface
 # in the team section, and a file only THEY read must not be reported as never-loaded —
 # while a control file nobody reads still must be (guards against the section silently dying)
@@ -338,6 +356,55 @@ if printf '%s' "$out" | grep -q 'ignored 3 / used 0 .*broad.md' && printf '%s' "
 	echo "PASS T16 polish candidate carries a prescription naming directory anchor + catch-all description"
 else
 	echo "FAIL T16 prescription: $(printf '%s' "$out" | grep -A1 'broad.md' | head -3)"; fail=1
+fi
+
+# T17 SessionStart (source=startup): records the baseline HEAD silently — no stdout
+out=$(printf '{"session_id":"s-cmp","cwd":"%s","source":"startup"}' "$REPO" | bash "$HERE/session-start.sh" 2>/dev/null)
+base="$LORE_DATA_DIR/sessions/s-cmp.head"
+if [ -z "$out" ] && [ -s "$base" ] && [ "$(cat "$base")" = "$(git -C "$REPO" rev-parse HEAD)" ]; then
+	echo "PASS T17 SessionStart startup: baseline HEAD recorded, no output"
+else
+	echo "FAIL T17 out='$out' base=$(cat "$base" 2>/dev/null | head -c 12)"; fail=1
+fi
+
+# T18 SessionStart (source=compact) in an onboarded repo: emits the memorize nudge as
+# additionalContext, records a compact event, keeps the original baseline
+printf 'x' > "$REPO/probe.txt"; git -C "$REPO" add -A >/dev/null 2>&1; git -C "$REPO" -c user.email=t@example.com -c user.name=t commit -q -m "move head" >/dev/null 2>&1
+out=$(printf '{"session_id":"s-cmp","cwd":"%s","source":"compact"}' "$REPO" | bash "$HERE/session-start.sh" 2>/dev/null)
+ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)
+if printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"' >/dev/null 2>&1 &&
+	printf '%s' "$ctx" | grep -q 'compacted' && printf '%s' "$ctx" | grep -q 'lore:memorize' &&
+	[ "$(cat "$base")" != "$(git -C "$REPO" rev-parse HEAD)" ] &&
+	[ "$(grep -c '"event":"compact".*"session":"s-cmp"' "$LORE_DATA_DIR/metrics.jsonl")" -eq 1 ]; then
+	echo "PASS T18 SessionStart compact: nudge emitted, compact event recorded, baseline preserved"
+else
+	echo "FAIL T18 out=$out"; fail=1
+fi
+
+# T19 compact outside any onboarded repo: silent (opt-in boundary holds)
+out=$(printf '{"session_id":"s-cmp2","cwd":"%s","source":"compact"}' "$T" | bash "$HERE/session-start.sh" 2>/dev/null)
+if [ -z "$out" ] && [ ! -f "$LORE_DATA_DIR/sessions/s-cmp2.head" ]; then
+	echo "PASS T19 SessionStart compact outside onboarded repo: silent"
+else
+	echo "FAIL T19 out='$out'"; fail=1
+fi
+
+# T20 codex format: same nudge shape, event lands in the codex data dir
+out=$(printf '{"session_id":"s-cmp3","cwd":"%s","source":"compact"}' "$REPO" | LORE_DATA_DIR="$FRESH" bash "$HERE/session-start.sh" codex 2>/dev/null)
+if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("lore:memorize")' >/dev/null 2>&1 &&
+	grep -q '"event":"compact".*"session":"s-cmp3"' "$FRESH/metrics.jsonl"; then
+	echo "PASS T20 SessionStart compact (codex): nudge emitted, event in codex data dir"
+else
+	echo "FAIL T20 out=$out"; fail=1
+fi
+
+# T21 stats surfaces compaction pressure: the compact event from T18 (data dir) must appear
+# as one compacted session; the codex-dir event from T20 must not leak in
+out=$(cd "$REPO" && bash "$HERE/lore-stats.sh" codex 2>&1)
+if printf '%s' "$out" | grep -q 'compacted mid-session: 1 session'; then
+	echo "PASS T21 stats: compacted mid-session count from the compact events"
+else
+	echo "FAIL T21: $(printf '%s' "$out" | grep -i 'compact' | head -2)"; fail=1
 fi
 
 [ $fail -eq 0 ] && echo "== all passed ==" || echo "== failures =="

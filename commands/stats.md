@@ -6,6 +6,7 @@ Run the lore metrics summary and interpret it: `bash "${CLAUDE_PLUGIN_ROOT}/scri
 
 Then assess adoption health from the numbers:
 - Capture funnel: low response rate → the gate instruction is being ignored (check the reason wording); written stuck at 0 → the gate fires but no capture habit has formed; a high nothing_to_save share is healthy (quality over quantity).
+- Compacted mid-session: sessions whose context was compacted before they ended. If their nothing_to_save share sits well above the overall funnel, early-session facts are being lost at wrap-up — the post-compaction nudge exists for this; in long sessions, capture mid-way.
 - Gate fires too rarely → thresholds may be too strict, or sessions aren't running in onboarded repos; too often → noisy, consider raising thresholds.
 - Top loaded knowledge → most-hit entries; the "never loaded" list → retire-or-activate candidates.
 - Feedback trend: if the last-14-days hit rate is clearly below the historical rate, new feedback quality is slipping — don't be comforted by the cumulative number; find the culprits in the polish-candidates list.

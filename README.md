@@ -23,7 +23,7 @@ What counts as knowledge here: **facts you cannot derive from the code** — imp
 ```mermaid
 flowchart TB
   subgraph session["One coding session"]
-    A["SessionStart<br/>baseline: index pointer, session id"] --> B["Agent works"]
+    A["SessionStart<br/>baseline: starting HEAD, session id<br/>(after a compaction: capture nudge)"] --> B["Agent works"]
     B -->|"touches a file matching<br/>an entry's code-anchor"| C["path rule pushes that entry<br/>(a tracked load)"]
     C --> B
     B --> D{"Stop gate:<br/>substantial session?"}
@@ -43,7 +43,7 @@ flowchart TB
 
 1. **Onboard once.** `/lore:init` creates `docs/ai-knowledge/`. The directory's existence is the opt-in marker: every hook checks for it first and does nothing elsewhere.
 2. **Retrieve on demand.** `INDEX.md` costs one line per entry. When the agent touches a file that matches an entry's `code-anchors`, the path-scoped rule pushes that entry into context — each push is a tracked load.
-3. **Capture at wrap-up.** The Stop gate fires only for substantial sessions. `lore:memorize` runs the rubric, dedupes against the index, and writes at most a couple of files — or reports "nothing to save", which is a legitimate outcome.
+3. **Capture at wrap-up.** The Stop gate fires only for substantial sessions; when the runtime compacts the context mid-session, SessionStart nudges the agent to capture earlier facts right then, before they drop out of context. `lore:memorize` runs the rubric, dedupes against the index, and writes at most a couple of files — or reports "nothing to save", which is a legitimate outcome.
 4. **Judge what was loaded.** The same wrap-up marks every tracked load used, ignored, or contradicted. That verdict is the signal everything downstream runs on.
 5. **Review like code.** The generator rebuilds the index, the gate files, and the rules; knowledge and artifacts ride the normal PR, and the CI `--check` backstops drift.
 6. **Govern monthly.** `/lore:stats` turns the metrics into prescriptions, anchor drift, and retirement candidates; `lore:knowledge-consolidate` acts on them and promotes cross-repo facts to the team's memory layer.
@@ -84,7 +84,7 @@ Then, in a repo you care about:
 | skill `lore:set-language` | Per-repo knowledge language (`docs/ai-knowledge/lore.json`), optional translation of existing entries |
 | skill `lore:harvest` | Bulk import: mine existing docs (ADRs, postmortems, runbooks, pasted text) for facts the code can't tell you; candidates confirmed before writing |
 | command `/lore:doctor` | Self-check: dependencies, hook registration, per-channel liveness, dry-run gates, repo `--check` and index scale — because every hook fails open, breakage is otherwise silent |
-| hook `SessionStart` | Records the session's starting HEAD (baseline for "cumulative changes") |
+| hook `SessionStart` | Records the session's starting HEAD (baseline for "cumulative changes"). After a context compaction it nudges the agent to capture business facts learned earlier in the session, before the Stop gate can no longer see them |
 | hook `Stop` | Layer 1 of the two-layer gate: only sessions with substantial work trigger the capture evaluation; also collects used/ignored/contradicted verdicts for knowledge loaded this session |
 | hook `PreToolUse` + `PostToolUse` | The write gate: knowledge files are writable only while a lore skill's instructions are in context (turn-scoped, hook-issued grant); generated artifacts are never hand-editable |
 | hook `InstructionsLoaded` | Async telemetry: records knowledge files being loaded (read-rate metric) |
@@ -139,6 +139,7 @@ Nothing is shared with the team unless the repo opts in. With `"teamMetrics": tr
 
 - **What the file contains**: your git user name (or `LORE_METRICS_USER`), per-file counts for loads / used / ignored / contradicted / written over the last 90 days, gate-fire counts, and the export date. No session ids, no timelines, no knowledge content.
 - **What it is for**: `/lore:stats` aggregates every committed rollup into a team section (most-used entries, entries ignored by everyone) and stops reporting an entry as "never loaded" once any teammate's rollup shows reads.
+- **Low churn when on**: a re-export that changes no count leaves the file untouched, so the repo sees a diff only when usage actually changed.
 - **Off (the default)**: `export-summary` writes nothing and says so. Decide as a team before turning it on — in a public repository the rollups are public too.
 - The files are generated artifacts: marked `linguist-generated`, write-gated against hand edits, rebuilt by each export.
 ### Cross-repo knowledge and team memory layers

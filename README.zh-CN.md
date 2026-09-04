@@ -23,7 +23,7 @@
 ```mermaid
 flowchart TB
   subgraph session["一次编码会话"]
-    A["SessionStart<br/>基线：索引指针、会话 id"] --> B["Agent 干活"]
+    A["SessionStart<br/>基线：起始 HEAD、会话 id<br/>（压缩后：沉淀提醒）"] --> B["Agent 干活"]
     B -->|"碰到匹配某条目<br/>code-anchor 的文件"| C["路径规则推送该条目<br/>（一次被追踪的加载）"]
     C --> B
     B --> D{"Stop 闸门：<br/>会话够实质吗？"}
@@ -43,7 +43,7 @@ flowchart TB
 
 1. **接入一次。** `/lore:init` 创建 `docs/ai-knowledge/`。这个目录的存在就是 opt-in 标记：每个 hook 先检查它，其他仓库里什么都不做。
 2. **按需检索。** `INDEX.md` 每条只占一行。agent 碰到匹配某条目 `code-anchors` 的文件时，路径规则把该条目推进上下文，每次推送都是一次被追踪的加载。
-3. **收尾时沉淀。** Stop 闸门只对实质性会话触发。`lore:memorize` 过 rubric、对索引去重，最多写一两个文件，或者报告「没什么可存」，这同样是正当结果。
+3. **收尾时沉淀。** Stop 闸门只对实质性会话触发；运行时在会话中途压缩上下文时，SessionStart 会当场提醒 agent 沉淀早期学到的事实，免得它们掉出上下文。`lore:memorize` 过 rubric、对索引去重，最多写一两个文件，或者报告「没什么可存」，这同样是正当结果。
 4. **判定读过的内容。** 同一次收尾把每次被追踪的加载标为 used、ignored 或 contradicted。下游的一切都靠这个信号运转。
 5. **像代码一样评审。** 生成器重建索引、门禁文件和规则；知识和生成物随普通 PR 走，CI 的 `--check` 兜住漂移。
 6. **每月治理。** `/lore:stats` 把度量变成处方、锚点漂移和淘汰候选；`lore:knowledge-consolidate` 据此行动，并把跨仓事实晋升到团队记忆层。
@@ -84,7 +84,7 @@ flowchart TB
 | skill `lore:set-language` | 仓级知识语言（`docs/ai-knowledge/lore.json`），可选翻译存量条目 |
 | skill `lore:harvest` | 批量导入：从存量文档（ADR、事故复盘、runbook、粘贴文本）挖掘代码推不出来的事实；写入前逐条确认 |
 | command `/lore:doctor` | 自检：依赖、hook 注册、各通道活性、闸门干跑、当前仓 `--check` 与索引规模——所有 hook 都 fail-open，坏了是静默的，这个命令让它可见 |
-| hook `SessionStart` | 记录会话起始 HEAD（「累计改动」的基线） |
+| hook `SessionStart` | 记录会话起始 HEAD（「累计改动」的基线）。上下文被压缩后，提醒 agent 立刻沉淀会话早期学到的业务事实，免得 Stop 闸门到时已看不到 |
 | hook `Stop` | 双层闸门第一层：只有实质工作量的会话才触发沉淀评估；同时收集本会话已加载知识的 used/ignored/contradicted 回判 |
 | hook `PreToolUse` + `PostToolUse` | 写入门禁：只有 lore skill 的指令在上下文里时知识文件才可写（hook 发放的限次授权）；生成物一律禁止手改 |
 | hook `InstructionsLoaded` | 异步埋点：记录知识文件被加载（读取率度量） |
@@ -139,6 +139,7 @@ PR 里评审知识文件的三问：事实对不对？有没有 code-anchors？�
 
 - **文件包含什么**：你的 git 用户名（或 `LORE_METRICS_USER`）、最近 90 天每个知识文件的 loads / used / ignored / contradicted / written 计数、闸门触发次数、导出日期。不含 session id，不含时间线，不含知识内容。
 - **用来做什么**：`/lore:stats` 把所有已提交的汇总聚合成团队段（最常用条目、全员忽略的条目），并且只要任一队友的汇总显示过读取，就不再把该条目报成「从未被读」。
+- **开启后低噪音**：重新导出若没有任何计数变化，文件原样不动，仓库只在用量真变了时才出现 diff。
 - **关闭时（默认）**：`export-summary` 不写任何文件并明确提示。开启前请团队一起决定，公开仓库里的汇总同样是公开的。
 - 汇总文件是生成物：标记 `linguist-generated`，写入门禁拒绝手改，由每次导出重建。
 ### 跨仓知识与团队记忆层

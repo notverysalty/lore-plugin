@@ -253,6 +253,13 @@ if [ "$EXPORT" = 1 ]; then
 		echo "export-summary: failed to build the rollup"
 		exit 1
 	fi
+	# Churn control: a re-export that changes no count leaves the committed file untouched
+	# (only `updated` would differ), so an opted-in repo sees a diff only when usage changed
+	if [ -f "$out_dir/$slug.json" ] && [ "$(jq -S 'del(.updated)' "$out_dir/$slug.json" 2>/dev/null)" = "$(jq -S 'del(.updated)' "$rollup_tmp")" ]; then
+		rm -f "$rollup_tmp"
+		echo "[lore-stats] $out_dir/$slug.json unchanged (no new usage in the window) — not rewritten"
+		exit 0
+	fi
 	mv "$rollup_tmp" "$out_dir/$slug.json" || { rm -f "$rollup_tmp"; exit 1; }
 	echo "[lore-stats] wrote $out_dir/$slug.json (user $user, ${cutoff:-∞}..$today) — commit it with your normal PR"
 	exit 0
@@ -282,6 +289,15 @@ jq -s -r '
 	  ("written (real writes): \($wn)   nothing_to_save (evaluated, nothing qualified): \($ns)"
 	   + (if $unk > 0 then "   records without a session: \($unk)" else "" end)),
 	  (if ($g|length) > $resp then "sessions without records: \(($g|length) - $resp) (fires predating the write telemetry have none — expected)" else empty end)
+' "$tmp" 2>/dev/null
+# Compaction pressure: sessions whose context was compacted before they ended — there the Stop
+# gate only sees what survived, which is why SessionStart nudges for a capture at that moment.
+# A nothing_to_save share here well above the overall funnel means early facts are being lost.
+jq -s -r '
+	([.[] | select(.event=="compact") | .session] | unique) as $c
+	| if ($c|length) == 0 then empty else
+	  ([.[] | select(.event=="kb_write" and (.session as $s | $c | index($s) != null))]) as $w
+	  | "compacted mid-session: \($c|length) session(s) — their wrap-ups: written \([$w[] | select(.verdict=="written")] | length), nothing_to_save \([$w[] | select(.verdict=="nothing_to_save")] | length) (a capture nudge was issued right after each compaction)" end
 ' "$tmp" 2>/dev/null
 echo
 echo "-- fires by repo (where capture opportunities come from; worktrees merged into main repos) --"

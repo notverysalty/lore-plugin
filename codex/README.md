@@ -13,7 +13,7 @@ lore's core is runtime-agnostic: the knowledge content (`docs/ai-knowledge/`), t
 | memorize / init / knowledge-consolidate / resolve-merge / set-language / harvest | Native Codex Skills, installed under `lore-*` prefixed names (same SKILL.md; the name and in-body references are rewritten on install; `agents/openai.yaml` controls implicit invocation) |
 | Path-scoped rules (`.claude/rules/knowledge/`) | `PostToolUse` hook (`push-knowledge.sh`, matcher `apply_patch\|Edit\|Write`): an edit hitting a knowledge anchor path → inject that entry's read pointer. Reuses the same rules artifacts as the path→knowledge map — single source of truth |
 | Automatic gate (wrap-up capture) | Codex `Stop` hook — emits `{"decision":"block","reason":...}` (same shape as Claude Code); the reason becomes an automatic continuation prompt |
-| Session-start baseline | Codex `SessionStart` hook |
+| Session-start baseline (+ post-compaction capture nudge when the hook input carries `source: compact`) | Codex `SessionStart` hook |
 
 The gate/push scripts take a `codex` argument to emit Codex-format JSON; both runtimes share the same logic.
 
