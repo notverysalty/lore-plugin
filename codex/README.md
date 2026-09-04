@@ -10,7 +10,7 @@ lore's core is runtime-agnostic: the knowledge content (`docs/ai-knowledge/`), t
 |---|---|
 | Knowledge content `docs/ai-knowledge/` | Unchanged; Codex reads it directly |
 | Retrieval pointer | `AGENTS.md` (Codex reads it natively; written per repo by init) |
-| memorize / init / knowledge-consolidate / resolve-merge / set-language | Native Codex Skills, installed under `lore-*` prefixed names (same SKILL.md; the name and in-body references are rewritten on install; `agents/openai.yaml` controls implicit invocation) |
+| memorize / init / knowledge-consolidate / resolve-merge / set-language / harvest | Native Codex Skills, installed under `lore-*` prefixed names (same SKILL.md; the name and in-body references are rewritten on install; `agents/openai.yaml` controls implicit invocation) |
 | Path-scoped rules (`.claude/rules/knowledge/`) | `PostToolUse` hook (`push-knowledge.sh`, matcher `apply_patch\|Edit\|Write`): an edit hitting a knowledge anchor path → inject that entry's read pointer. Reuses the same rules artifacts as the path→knowledge map — single source of truth |
 | Automatic gate (wrap-up capture) | Codex `Stop` hook — emits `{"decision":"block","reason":...}` (same shape as Claude Code); the reason becomes an automatic continuation prompt |
 | Session-start baseline | Codex `SessionStart` hook |
@@ -27,7 +27,7 @@ bash codex/install.sh
 
 It will:
 - Copy the skills to `~/.agents/skills/` (Codex's documented user-skill location) under `lore-*` prefixed directory and frontmatter names (with `agents/openai.yaml`; in-body `lore:*` references and script paths rewritten; earlier lore installs in the legacy `~/.codex/skills/` swept)
-- Copy the gate + path-push + telemetry scripts to `~/.codex/lore/scripts/`
+- Copy the gate + path-push + telemetry + stats + doctor scripts to `~/.codex/lore/scripts/` (self-check: `bash ~/.codex/lore/scripts/lore-doctor.sh codex`)
 - Merge `~/.codex/hooks.json` (your existing hooks are preserved; SessionStart + Stop + PostToolUse all point at `--format=codex`)
 
 Then, as prompted:

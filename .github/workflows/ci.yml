@@ -37,3 +37,7 @@ jobs:
         run: ${{ matrix.bash }} scripts/test-knowledge-write-gate.sh
       - name: Hook-output regression (Stop gate JSON, path push, fresh-install stats)
         run: ${{ matrix.bash }} scripts/test-hooks-output.sh
+      - name: Generator index/lint regression (lint hints, --strict, grouped index, lore.json)
+        run: ${{ matrix.bash }} scripts/test-gen-index.sh
+      - name: Doctor smoke (must exit 0 on a fresh checkout; warnings allowed)
+        run: ${{ matrix.bash }} scripts/lore-doctor.sh /tmp

@@ -16,6 +16,8 @@ import {join, dirname, basename, resolve, sep} from 'node:path';
 
 const args = process.argv.slice(2);
 const check = args.includes('--check');
+// --strict promotes lint hints (broad descriptions, directory anchors, oversized files) to errors
+const strict = args.includes('--strict');
 const repoRoot = resolve(args.find((a) => !a.startsWith('--')) || process.cwd());
 const kbDir = join(repoRoot, 'docs', 'ai-knowledge');
 const rulesDir = join(repoRoot, '.claude', 'rules', 'knowledge');
@@ -208,6 +210,11 @@ function parseFrontmatter(text) {
 }
 
 const problems = [];
+// Lint hints: quality signals that are not errors. They surface the write-time causes behind
+// the top 'retrieved but ignored' entries measured in practice, so they can be fixed at the
+// source instead of during monthly governance. Non-blocking unless --strict.
+const lints = [];
+const BROAD_DESC = /\b(read (this )?before (changing|touching|modifying|editing)|must[- ]read|always read|read when(ever)? touching|read before any change)\b|必读/i;
 const entries = [];
 // `name` becomes a rules output filename, so it is validated before use: an unvalidated
 // value like `../../../etc/x` would write outside the repo, and two files sharing a name
@@ -219,7 +226,8 @@ for (const f of readdirSync(kbDir).sort()) {
 	if (!f.endsWith('.md') || f === 'INDEX.md' || f === 'AGENTS.md' || f === 'CLAUDE.md' || f.startsWith('_')) continue;
 	const p = join(kbDir, f);
 	if (statSync(p).isDirectory()) continue;
-	const fm = parseFrontmatter(readFileSync(p, 'utf8'));
+	const text = readFileSync(p, 'utf8');
+	const fm = parseFrontmatter(text);
 	if (!fm || !fm.name || !fm.description) {
 		problems.push(`${f}: missing frontmatter or required fields name/description`);
 		continue;
@@ -262,6 +270,11 @@ for (const f of readdirSync(kbDir).sort()) {
 			localAnchors.push(a); // only in-repo anchors become rules path-globs
 		}
 	}
+	if (BROAD_DESC.test(fm.description)) lints.push(`${f}: description uses a catch-all phrasing ("read before changing …") — it matches most sessions and gets ignored; narrow it to concrete symptoms / errors / scenarios`);
+	if (fm.description.length > 400) lints.push(`${f}: description is ${fm.description.length} chars — likely bundling several topics; split into one entry per symptom family`);
+	for (const a of localAnchors) if (a.endsWith('/')) lints.push(`${f}: directory anchor "${a}" pushes this entry on ANY change under it — anchor to the specific file(s) that carry the fact unless the whole tree truly needs it`);
+	const lineCount = text.split('\n').length;
+	if (lineCount > 180) lints.push(`${f}: ${lineCount} lines — over the 100–200 guideline; consider splitting`);
 	entries.push({file: `docs/ai-knowledge/${f}`, fm, anchors, localAnchors});
 }
 entries.sort((a, b) => a.fm.name.localeCompare(b.fm.name));
@@ -269,11 +282,16 @@ entries.sort((a, b) => a.fm.name.localeCompare(b.fm.name));
 // The per-repo config is read by the capture/governance skills, so a malformed file must
 // surface here rather than silently reverting them to the default language.
 const configPath = join(kbDir, 'lore.json');
+let cfg = {};
 if (existsSync(configPath)) {
 	try {
-		const cfg = JSON.parse(readFileSync(configPath, 'utf8'));
+		cfg = JSON.parse(readFileSync(configPath, 'utf8')) || {};
 		if (cfg.language !== undefined && typeof cfg.language !== 'string') problems.push('lore.json: "language" must be a string (a BCP 47 tag such as "en" or "zh-CN")');
+		if (cfg.indexMode !== undefined && !['flat', 'grouped', 'auto'].includes(cfg.indexMode)) problems.push('lore.json: "indexMode" must be flat | grouped | auto');
+		if (cfg.indexGroupThreshold !== undefined && !(Number.isInteger(cfg.indexGroupThreshold) && cfg.indexGroupThreshold > 0)) problems.push('lore.json: "indexGroupThreshold" must be a positive integer');
+		if (cfg.promotionTarget !== undefined && typeof cfg.promotionTarget !== 'string') problems.push('lore.json: "promotionTarget" must be a string naming the team memory layer cross-repo knowledge is promoted to');
 	} catch {
+		cfg = {};
 		problems.push('lore.json: not valid JSON');
 	}
 }
@@ -286,11 +304,50 @@ const indexLines = [
 	'> Trust protocol: knowledge is a lead, not the source of truth — verify against the code via each file\x27s code-anchors before key decisions; when knowledge contradicts code, the code wins and the knowledge file gets fixed in passing. Learned a new business fact while finishing a task → invoke lore:memorize (agents without that skill must not write this directory directly; write policy: this directory\x27s AGENTS.md).',
 	'',
 ];
-for (const e of entries) {
-	const flags = [e.fm.status === 'hypothesis' ? '⚠ hypothesis' : '', e.fm.scope === 'cross-repo' ? '🔁 cross-repo' : '']
-		.filter(Boolean)
-		.join(', ');
-	indexLines.push(`- **${e.fm.name}**${flags ? ` (${flags})` : ''} — ${e.fm.description} → ${e.file}`);
+// ---- scaling: flat vs grouped index ----
+// INDEX.md is loaded whole every session, so a flat list re-creates the "CLAUDE.md is too big"
+// problem once a repo holds dozens of entries. Above a threshold (lore.json indexGroupThreshold,
+// default 30; indexMode flat|grouped|auto overrides) the index switches to sections keyed by
+// the anchored code area (first two path segments of the first local anchor), with trimmed
+// descriptions — the head of a description carries its symptom keywords; the full trigger
+// list lives in the file's frontmatter. Path-scoped rules are unaffected either way.
+const indexMode = cfg.indexMode || 'auto';
+const groupThreshold = cfg.indexGroupThreshold || 30;
+const grouped = indexMode === 'grouped' || (indexMode === 'auto' && entries.length > groupThreshold);
+const flagsOf = (e) =>
+	[e.fm.status === 'hypothesis' ? '⚠ hypothesis' : '', e.fm.scope === 'cross-repo' ? '🔁 cross-repo' : ''].filter(Boolean).join(', ');
+const trim = (str, n) => (str.length <= n ? str : str.slice(0, n).replace(/\s+\S*$/, '') + '…');
+const groupOf = (e) => {
+	const a = e.localAnchors[0];
+	if (!a) return e.anchors.length ? 'cross-repo' : 'general';
+	const segs = a.replace(/\/+$/, '').split('/');
+	const dirSegs = a.endsWith('/') ? segs : segs.slice(0, -1);
+	return dirSegs.slice(0, 2).join('/') || 'general';
+};
+if (!grouped) {
+	for (const e of entries) {
+		const flags = flagsOf(e);
+		indexLines.push(`- **${e.fm.name}**${flags ? ` (${flags})` : ''} — ${e.fm.description} → ${e.file}`);
+	}
+} else {
+	indexLines.push(`> Grouped index (${entries.length} entries, above the ${groupThreshold}-entry threshold): one section per anchored code area; descriptions are trimmed — open the file for the full trigger list.`, '');
+	const groups = new Map();
+	for (const e of entries) {
+		const g = groupOf(e);
+		if (!groups.has(g)) groups.set(g, []);
+		groups.get(g).push(e);
+	}
+	const tail = ['cross-repo', 'general'];
+	const order = [...groups.keys()].sort((x, y) => (tail.indexOf(x) - tail.indexOf(y)) || x.localeCompare(y));
+	for (const g of order) {
+		indexLines.push(`## ${g} (${groups.get(g).length})`);
+		for (const e of groups.get(g)) {
+			const flags = flagsOf(e);
+			indexLines.push(`- **${e.fm.name}**${flags ? ` (${flags})` : ''} — ${trim(e.fm.description, 140)} → ${e.file}`);
+		}
+		indexLines.push('');
+	}
+	if (indexLines[indexLines.length - 1] === '') indexLines.pop();
 }
 const indexContent = indexLines.join('\n') + '\n';
 
@@ -325,7 +382,7 @@ const gateContent =
 		'This directory is the content layer of the lore knowledge base: **reads are open, writes are gated**.',
 		'',
 		'- **Read**: anyone / any agent, on demand via the `INDEX.md` index — no tooling required.',
-		'- **Write** (create / rewrite / delete files here): only through the lore engine flows — Claude Code\x27s `lore:memorize` / `lore:knowledge-consolidate` / `lore:resolve-merge` / `lore:init` / `lore:set-language`, or the corresponding installed `lore-*` skills on Codex. Those flows carry the rubric, dedupe, scope routing, index rebuild, and capture telemetry; hand-writing bypasses all of it.',
+		'- **Write** (create / rewrite / delete files here): only through the lore engine flows — Claude Code\x27s `lore:memorize` / `lore:knowledge-consolidate` / `lore:resolve-merge` / `lore:init` / `lore:set-language` / `lore:harvest`, or the corresponding installed `lore-*` skills on Codex. Those flows carry the rubric, dedupe, scope routing, index rebuild, and capture telemetry; hand-writing bypasses all of it.',
 		'- **Agents without those skills must not create or rewrite files here**: learned a business fact worth keeping → put it in the PR description / handoff notes, or tell the user "there is candidate knowledge to capture" and let a lore-equipped session do it.',
 		'- The one exception (trust protocol): on finding knowledge that contradicts the code, any agent may make a **minimal correction** — fix only the demonstrably stale facts in the body and refresh the frontmatter `updated` date; no new files, no other frontmatter changes, no full rewrites. In lore-equipped sessions even this goes through `lore:memorize` (it has a built-in correction path) — do not hand-edit.',
 		'- **Generated artifacts are never hand-edited**: `INDEX.md`, `.claude/rules/knowledge/*.md`, and this file are produced by `gen-knowledge-index.mjs`; after changing knowledge-file frontmatter, rerun the generator.',
@@ -375,12 +432,14 @@ if (check) {
 	}
 	for (const o of orphans) drift.push(`${o} (orphan, must be deleted)`);
 	if (gaMissing.length) drift.push(`.gitattributes (missing ${gaMissing.length} generated-artifact union line(s))`);
+	for (const x of lints) console.error(`[lint] ${x}`);
+	if (strict) problems.push(...lints.map((l) => `(strict) ${l}`));
 	if (problems.length || drift.length) {
 		for (const x of problems) console.error(`[problem] ${x}`);
 		for (const x of drift) console.error(`[drift] ${x} differs from the generated result — run gen-knowledge-index.mjs and commit`);
 		process.exit(1);
 	}
-	console.log(`[gen-knowledge-index] check passed: ${entries.length} knowledge file(s), ${ruleFiles.size} rule(s)`);
+	console.log(`[gen-knowledge-index] check passed: ${entries.length} knowledge file(s), ${ruleFiles.size} rule(s)${lints.length ? `, ${lints.length} lint hint(s) above (pass --strict to enforce)` : ''}`);
 	process.exit(0);
 }
 
@@ -414,6 +473,7 @@ if (gaMissing.length) {
 	safeWrite(gaPath, lines.join('\n') + '\n', '.gitattributes');
 }
 for (const o of orphans) rmSync(join(repoRoot, o));
+for (const x of lints) console.error(`[lint] ${x}`);
 for (const x of problems) console.error(`[problem] ${x}`);
 console.log(
 	`[gen-knowledge-index] generated INDEX.md (${entries.length} entries) + ${ruleFiles.size} rule(s)${orphans.length ? `, pruned ${orphans.length} orphan rule(s)` : ''}${gaMissing.length ? `, backfilled ${gaMissing.length} .gitattributes union line(s)` : ''}`,

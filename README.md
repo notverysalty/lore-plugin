@@ -27,7 +27,7 @@ What counts as knowledge here: **facts you cannot derive from the code** — imp
 
 Then, in a repo you care about:
 
-1. `/lore:init` — creates the `docs/ai-knowledge/` skeleton, CLAUDE.md/AGENTS.md pointers, and walks you through seeding the first few real entries (don't skip seeding — an empty knowledge base gives the automation nothing to work with).
+1. `/lore:init` — creates the `docs/ai-knowledge/` skeleton, CLAUDE.md/AGENTS.md pointers, and walks you through seeding the first few real entries (don't skip seeding — an empty knowledge base gives the automation nothing to work with). Already have ADRs, postmortems or runbooks? `/lore:harvest` mines them in bulk, with confirmation — the fastest way past the cold start.
 2. Work normally. When a session did substantial work, the Stop gate asks the agent to evaluate whether anything is worth capturing (`nothing to save` is a legitimate, encouraged answer).
 3. When you edit code covered by a knowledge anchor, the matching entry is pushed into context automatically.
 4. `/lore:stats` — the health report: capture funnel, hit rates, polish candidates, contradiction follow-ups.
@@ -42,18 +42,24 @@ Then, in a repo you care about:
 | skill `lore:knowledge-consolidate` | Governance: dedupe/contradictions, polish low-hit entries, harvest pending, archive |
 | skill `lore:resolve-merge` | Git merge conflicts in knowledge files: semantic union merge — never lose an entry |
 | skill `lore:set-language` | Per-repo knowledge language (`docs/ai-knowledge/lore.json`), optional translation of existing entries |
+| skill `lore:harvest` | Bulk import: mine existing docs (ADRs, postmortems, runbooks, pasted text) for facts the code can't tell you; candidates confirmed before writing |
+| command `/lore:doctor` | Self-check: dependencies, hook registration, per-channel liveness, dry-run gates, repo `--check` and index scale — because every hook fails open, breakage is otherwise silent |
 | hook `SessionStart` | Records the session's starting HEAD (baseline for "cumulative changes") |
 | hook `Stop` | Layer 1 of the two-layer gate: only sessions with substantial work trigger the capture evaluation; also collects used/ignored/contradicted verdicts for knowledge loaded this session |
 | hook `PreToolUse` + `PostToolUse` | The write gate: knowledge files are writable only while a lore skill's instructions are in context (turn-scoped, hook-issued grant); generated artifacts are never hand-editable |
 | hook `InstructionsLoaded` | Async telemetry: records knowledge files being loaded (read-rate metric) |
-| `scripts/lore-stats.sh` (`/lore:stats`, `--since=YYYY-MM-DD`) | Capture funnel / read effectiveness & 14-day trend / polish candidates / contradiction follow-up / team rollups / inventory (pending backlog, never-loaded, time-to-first-use); `export-summary` writes your per-user team rollup into the repo |
-| `scripts/gen-knowledge-index.mjs` | Generates INDEX.md + `.claude/rules/knowledge/*.md` + the write-gate files from frontmatter; concurrency-locked writes; `--check` mode for CI |
+| `scripts/lore-stats.sh` (`/lore:stats`, `--since=YYYY-MM-DD`) | Capture funnel / read effectiveness & 14-day trend / polish candidates **with a fix prescription each** / contradiction follow-up / team rollups / **anchor drift** (anchored code changed after the entry was written) / inventory (pending backlog, never-loaded, time-to-first-use); `export-summary` writes your per-user team rollup into the repo |
+| `scripts/gen-knowledge-index.mjs` | Generates INDEX.md (flat, or grouped by code area once a repo grows) + `.claude/rules/knowledge/*.md` + the write-gate files from frontmatter; validates frontmatter and lints write-time smells (catch-all descriptions, directory anchors, oversized files — `--strict` makes them errors); concurrency-locked writes; `--check` mode for CI |
 
 ## Behavior boundaries (opt-in by design)
 
 Every hook first checks whether the current repo has `docs/ai-knowledge/`: **absent → silent exit**. The plugin is enabled globally but only ever *does* anything in onboarded repos; every other project sees zero behavior.
 
 The Stop gate stays silent unless real work happened (any of: loop guard, inside a subagent, not opted in, < 10 cumulative changed lines and < 8 real user turns since session start, already evaluated twice this session, same change fingerprint as the last evaluation, any script error).
+
+## Scaling: flat vs grouped index
+
+INDEX.md is loaded whole every session, so a flat list would eventually recreate the "CLAUDE.md is too big" problem lore exists to avoid. Above a threshold (30 entries by default) the generator switches the index to **grouped mode**: one section per anchored code area (the first two path segments of an entry's first anchor), with trimmed descriptions — the head of a description carries its symptom keywords, and the full trigger list lives in the file's frontmatter. Path-scoped rules are unaffected. Tune via `docs/ai-knowledge/lore.json`: `"indexMode": "flat" | "grouped" | "auto"` and `"indexGroupThreshold": 30`. `/lore:doctor` warns as a repo approaches the threshold.
 
 ## Knowledge language
 
@@ -69,7 +75,7 @@ Engine text, generated artifacts, and frontmatter are always English. The langua
 - run: node <plugin-or-vendored-path>/gen-knowledge-index.mjs . --check
 ```
 
-Validates frontmatter, live anchors, zero artifact drift, and complete `.gitattributes` union entries. Trigger paths must include `docs/ai-knowledge/**`, `.claude/rules/knowledge/**`, **and** `.gitattributes` (template: [ci/knowledge-check.yml](ci/knowledge-check.yml) — without the last one, a PR that only deletes union lines skips the check).
+Validates frontmatter (kebab-case unique names, enums, dates, `lore.json`), live anchors, zero artifact drift, and complete `.gitattributes` union entries; prints **lint hints** for the write-time smells that make knowledge get ignored (catch-all descriptions, directory anchors, oversized files) — add `--strict` to turn hints into failures. Trigger paths must include `docs/ai-knowledge/**`, `.claude/rules/knowledge/**`, **and** `.gitattributes` (template: [ci/knowledge-check.yml](ci/knowledge-check.yml) — without the last one, a PR that only deletes union lines skips the check).
 
 ## Concurrency
 
@@ -95,6 +101,10 @@ Local streams alone can't answer "is this knowledge helping the *team*", so lore
 - `/lore:stats` aggregates every committed rollup into a **team rollups** section (top team-used entries, "ignored by everyone" polish signals), and the **never loaded** list counts a file as loaded if *any* teammate's rollup shows reads — so knowledge a colleague uses daily is never misreported as a retirement candidate.
 - The rollups are generated artifacts: `linguist-generated` in `.gitattributes` (no `merge=union` — per-user files never conflict), write-gated against hand edits.
 
+### Cross-repo knowledge and team memory layers
+
+lore is the **code-anchored** layer: knowledge that belongs to a repo, rides its PRs, and is pushed when you touch the code it describes. Facts that span repos (`scope: cross-repo`, `promote: pending`) should not pile up here — they belong in a team memory layer (a Hindsight / Mem0-style memory bank exposed over MCP, a shared knowledge repo, a wiki space). Name that layer in `lore.json` as `"promotionTarget"`, and `knowledge-consolidate` promotes pending entries there as compact durable facts, keeping the in-repo file as the anchored detail. The two layers are complementary, not competing: memory systems answer *when the agent asks*; lore answers *when the agent touches the code*.
+
 ## Cross-runtime (Codex)
 
 The content layer (`docs/ai-knowledge/` + `AGENTS.md` pointers) is runtime-agnostic — any agent can read it. The engine currently ships for two runtimes:
@@ -103,6 +113,10 @@ The content layer (`docs/ai-knowledge/` + `AGENTS.md` pointers) is runtime-agnos
 - **Codex**: `bash codex/install.sh` — the same skills (as `lore-*` names in `~/.agents/skills`), the same gate scripts in codex mode, and a PostToolUse path-push that reuses the rules artifacts. Aligned with the codex-cli 0.144.x docs; that surface moves fast, so file an issue if a newer CLI misbehaves. Details: [codex/README.md](codex/README.md).
 
 One runtime, one channel — don't double-install. Runtimes without the engine get read-only access, bounded by the generated gate files.
+
+## Troubleshooting
+
+Every lore hook fails open by design — a broken hook must never brick a session — which means a broken channel is silent. `/lore:doctor` makes it visible: dependency and layout checks, hook registration, data-dir writability, per-channel liveness from your metrics, dry runs of the write gate / Stop gate / path push against an isolated data dir, and the current repo's `--check` and index-scale status. Run it after installing, after upgrading Claude Code, and whenever `/lore:stats` shows a channel flatlining.
 
 ## Requirements
 

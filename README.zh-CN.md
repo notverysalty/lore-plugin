@@ -27,7 +27,7 @@
 
 然后在你关心的仓库里：
 
-1. `/lore:init` —— 创建 `docs/ai-knowledge/` 骨架、CLAUDE.md/AGENTS.md 指针，并引导你 seeding 首批真实知识（别跳过 seeding——空知识库让自动化无事可做）。
+1. `/lore:init` —— 创建 `docs/ai-knowledge/` 骨架、CLAUDE.md/AGENTS.md 指针，并引导你 seeding 首批真实知识（别跳过 seeding——空知识库让自动化无事可做）。已有 ADR、事故复盘、runbook？`/lore:harvest` 可以批量收割（逐条确认后写入）——这是跨过冷启动最快的路。
 2. 正常干活。会话有实质产出时，Stop 闸门会让 agent 评估是否有值得沉淀的内容（回答「无沉淀」是合法且被鼓励的结果）。
 3. 编辑被知识锚点覆盖的代码时，对应知识条目会自动推送进上下文。
 4. `/lore:stats` —— 健康报告：沉淀转化漏斗、命中率、打磨候选、矛盾追踪。
@@ -42,18 +42,24 @@
 | skill `lore:knowledge-consolidate` | 治理：去重/解矛盾、打磨低命中条目、收割 pending、归档 |
 | skill `lore:resolve-merge` | 知识文件的 git 合并冲突：语义并集合并——绝不丢条目 |
 | skill `lore:set-language` | 仓级知识语言（`docs/ai-knowledge/lore.json`），可选翻译存量条目 |
+| skill `lore:harvest` | 批量导入：从存量文档（ADR、事故复盘、runbook、粘贴文本）挖掘代码推不出来的事实；写入前逐条确认 |
+| command `/lore:doctor` | 自检：依赖、hook 注册、各通道活性、闸门干跑、当前仓 `--check` 与索引规模——所有 hook 都 fail-open，坏了是静默的，这个命令让它可见 |
 | hook `SessionStart` | 记录会话起始 HEAD（「累计改动」的基线） |
 | hook `Stop` | 双层闸门第一层：只有实质工作量的会话才触发沉淀评估；同时收集本会话已加载知识的 used/ignored/contradicted 回判 |
 | hook `PreToolUse` + `PostToolUse` | 写入门禁：只有 lore skill 的指令在上下文里时知识文件才可写（hook 发放的限次授权）；生成物一律禁止手改 |
 | hook `InstructionsLoaded` | 异步埋点：记录知识文件被加载（读取率度量） |
-| `scripts/lore-stats.sh`（`/lore:stats`，支持 `--since=YYYY-MM-DD`） | 沉淀转化漏斗 / 读取有效性与 14 天趋势 / 打磨候选 / 矛盾追踪 / 团队汇总 / 库存（pending 堆积、从未被读、time-to-first-use）；`export-summary` 把你的个人团队汇总写进仓库 |
-| `scripts/gen-knowledge-index.mjs` | 从 frontmatter 生成 INDEX.md + `.claude/rules/knowledge/*.md` + 写入门禁文件；写模式带并发锁；`--check` 供 CI |
+| `scripts/lore-stats.sh`（`/lore:stats`，支持 `--since=YYYY-MM-DD`） | 沉淀转化漏斗 / 读取有效性与 14 天趋势 / 打磨候选**（每条附修复处方）** / 矛盾追踪 / 团队汇总 / **锚点演进**（锚定代码在知识写后又改过）/ 库存（pending 堆积、从未被读、time-to-first-use）；`export-summary` 把你的个人团队汇总写进仓库 |
+| `scripts/gen-knowledge-index.mjs` | 从 frontmatter 生成 INDEX.md（平铺；仓库长大后按代码区域分组）+ `.claude/rules/knowledge/*.md` + 写入门禁文件；校验 frontmatter 并 lint 写入时的坏味道（宽句 description、目录锚、超长文件——`--strict` 升级为错误）；写模式带并发锁；`--check` 供 CI |
 
 ## 行为边界（opt-in 设计）
 
 每个 hook 第一步都检查当前仓库是否存在 `docs/ai-knowledge/`：**没有就静默退出**。插件全局启用，但只在接入了知识库的仓库里*做事*；其他项目零感知。
 
 Stop 闸门只在真的干了活时才出声（任一条件即静默：防循环标记、subagent 内、未接入、自会话起始累计改动 < 10 行且真实用户轮次 < 8、本会话已评估 2 次、改动指纹与上次评估相同、任何脚本错误）。
+
+## 规模化：平铺索引 vs 分组索引
+
+INDEX.md 每个会话整体加载，平铺列表迟早会重新长成 lore 本来要避免的「CLAUDE.md 太大」问题。超过阈值（默认 30 条）后生成器把索引切换为**分组模式**：按锚定的代码区域（条目首个锚点的前两级路径）分节，description 截短——description 的开头就是症状关键词，完整触发词表在文件的 frontmatter 里。路径推送 rules 不受影响。通过 `docs/ai-knowledge/lore.json` 调节：`"indexMode": "flat" | "grouped" | "auto"` 与 `"indexGroupThreshold": 30`。接近阈值时 `/lore:doctor` 会提醒。
 
 ## 知识语言
 
@@ -69,7 +75,7 @@ Stop 闸门只在真的干了活时才出声（任一条件即静默：防循环
 - run: node <plugin-or-vendored-path>/gen-knowledge-index.mjs . --check
 ```
 
-校验：frontmatter 合法、锚点存活、生成物零漂移、`.gitattributes` union 条目齐全。触发路径必须包含 `docs/ai-knowledge/**`、`.claude/rules/knowledge/**` **和** `.gitattributes`（模板见 [ci/knowledge-check.yml](ci/knowledge-check.yml)——少了最后一条，只删 union 行的 PR 就绕过了校验）。
+校验：frontmatter 合法（kebab-case 唯一 name、枚举、日期、`lore.json`）、锚点存活、生成物零漂移、`.gitattributes` union 条目齐全；并对让知识被无视的写入坏味道（宽句 description、目录锚、超长文件）打印 **lint 提示**——加 `--strict` 可把提示升级为失败。触发路径必须包含 `docs/ai-knowledge/**`、`.claude/rules/knowledge/**` **和** `.gitattributes`（模板见 [ci/knowledge-check.yml](ci/knowledge-check.yml)——少了最后一条，只删 union 行的 PR 就绕过了校验）。
 
 ## 并发治理
 
@@ -95,6 +101,10 @@ PR 里评审知识文件的三问：事实对不对？有没有 code-anchors？�
 - `/lore:stats` 聚合所有已提交的汇总为**团队汇总**段（团队最常用条目 top、「全员 ignored」的打磨信号），且**从未被读**清单在任何队友的汇总显示过读取时就不再误报——同事天天在用的知识不会被标成淘汰候选。
 - 汇总是生成物：`.gitattributes` 标 `linguist-generated`（不设 `merge=union`——per-user 文件天然无冲突），写入门禁拒绝手改。
 
+### 跨仓知识与团队记忆层
+
+lore 是**代码锚定**的那一层：知识归属某个仓、随它的 PR 走、在你触碰它描述的代码时被推送。跨仓事实（`scope: cross-repo`、`promote: pending`）不该在这里堆积——它们属于团队记忆层（Hindsight / Mem0 这类经 MCP 暴露的记忆库、共享知识仓、wiki 空间）。在 `lore.json` 用 `"promotionTarget"` 指明这一层，`knowledge-consolidate` 就会把 pending 条目以紧凑的持久事实上行到那里，仓内文件保留为锚定细节。两层是互补而非竞争：记忆系统在 *agent 主动问* 的时候回答；lore 在 *agent 触碰代码* 的时候回答。
+
 ## 跨 runtime（Codex）
 
 内容层（`docs/ai-knowledge/` + `AGENTS.md` 指针）runtime 无关——任何 agent 都能读。引擎层目前支持两个 runtime：
@@ -103,6 +113,10 @@ PR 里评审知识文件的三问：事实对不对？有没有 code-anchors？�
 - **Codex**：`bash codex/install.sh`——同一套 skills（以 `lore-*` 名装进 `~/.agents/skills`）、codex 模式的同一套闸门脚本、复用 rules 生成物的 PostToolUse 路径推送。对齐 codex-cli 0.144.x 文档；该接口迭代快，新版 CLI 上有异常请开 issue。详见 [codex/README.md](codex/README.md)。
 
 一个 runtime 一条通道，别双装。没装引擎的 runtime 对知识库只读，由生成的门禁文件约束。
+
+## 排障
+
+lore 的每个 hook 都是 fail-open 设计——坏掉的 hook 绝不能砸掉会话——代价是通道坏了没有任何声音。`/lore:doctor` 让它可见：依赖与目录布局检查、hook 注册、数据目录可写性、各通道从你的度量里推出的活性、在隔离数据目录里对写入门禁 / Stop 闸门 / 路径推送做干跑，以及当前仓的 `--check` 与索引规模状态。装完、升级 Claude Code 后、或 `/lore:stats` 里某个通道归零时跑一下。
 
 ## 环境要求
 

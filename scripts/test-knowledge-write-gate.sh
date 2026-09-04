@@ -92,6 +92,12 @@ rc=$(run_gate "$(payload Write "$REPO/docs/ai-knowledge/lore.json")")
 check "T5c allow lore.json write after lore:set-language" 0 "$rc"
 end_turn
 
+# T5d harvest is a granting skill too (bulk import writes knowledge files)
+invoke_skill 'lore:harvest'
+rc=$(run_gate "$(payload Write "$REPO/docs/ai-knowledge/from-adr.md")")
+check "T5d allow knowledge write after lore:harvest" 0 "$rc"
+end_turn
+
 # T6 uses are bounded: a single skill call is not an open-ended spree
 end_turn
 rc=$(printf '%s' "$(skill_payload 'lore:memorize')" | LORE_WRITE_GRANT_USES=2 bash "$GATE" >/dev/null 2>&1; echo $?)

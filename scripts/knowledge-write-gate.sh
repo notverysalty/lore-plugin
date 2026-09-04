@@ -65,8 +65,8 @@ ttl="${LORE_WRITE_GRANT_TTL:-600}"
 if [ "$tool" = "Skill" ]; then
 	skill=$(printf '%s' "$input" | jq -r '.tool_input.skill // ""' 2>/dev/null)
 	case "$skill" in
-		lore:memorize | lore:knowledge-consolidate | lore:resolve-merge | lore:init | lore:set-language | \
-			lore-memorize | lore-knowledge-consolidate | lore-resolve-merge | lore-init | lore-set-language)
+		lore:memorize | lore:knowledge-consolidate | lore:resolve-merge | lore:init | lore:set-language | lore:harvest | \
+			lore-memorize | lore-knowledge-consolidate | lore-resolve-merge | lore-init | lore-set-language | lore-harvest)
 			[ -n "$session" ] || exit 0
 			mkdir -p "$grant_dir" 2>/dev/null || exit 0
 			printf 'skill=%s at=%s uses=%s\n' "$skill" "$(date +%s)" "$max_uses" \
@@ -199,7 +199,7 @@ deny() {
 	{
 		echo "BLOCKED: docs/ai-knowledge/ is write-gated; do not hand-edit around the lore flows ($fp)."
 		echo "Correct paths: new knowledge / corrections -> lore:memorize; governance -> lore:knowledge-consolidate;"
-		echo "merge conflicts -> lore:resolve-merge; onboarding -> lore:init; language -> lore:set-language."
+		echo "merge conflicts -> lore:resolve-merge; onboarding -> lore:init; language -> lore:set-language; bulk import -> lore:harvest."
 		echo "The grant is auto-issued when those skills are invoked — bounded uses, cleared at Stop; there is no manual grant command."
 		echo "Full policy: the target repo's docs/ai-knowledge/AGENTS.md."
 	} >&2

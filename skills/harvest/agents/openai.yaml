@@ -1,0 +1,6 @@
+interface:
+  display_name: "lore: harvest"
+  short_description: "Import existing docs (ADRs, postmortems, runbooks) into the knowledge base"
+  default_prompt: "Use $lore-harvest to extract 'facts you cannot derive from the code' from existing documents into docs/ai-knowledge/, confirming candidates with me first."
+policy:
+  allow_implicit_invocation: true

@@ -157,8 +157,8 @@ if [ -n "$inv_roots" ]; then
 			case "$fname" in INDEX.md | AGENTS.md | CLAUDE.md) continue ;; esac
 			# Extract frontmatter scalars + whether code-anchors contains a cross-repo anchor
 			# ("repo:path" list items, excluding comments and URLs)
-			awk -v repo="$repo" -v file="$fname" '
-				BEGIN { fs=0; st=""; pr=""; up=""; sc=""; cross=0; inA=0 }
+			awk -v repo="$repo" -v file="$fname" -v root="$root" '
+				BEGIN { fs=0; st=""; pr=""; up=""; sc=""; cross=0; inA=0; anchors="" }
 				/^---[[:space:]]*$/ { fs++; if (fs==2) exit; next }
 				fs==1 {
 					if ($0 ~ /^[A-Za-z-]+:/) inA=0
@@ -172,9 +172,10 @@ if [ -n "$inv_roots" ]; then
 						sub(/^[[:space:]]*-[[:space:]]*/, "", item)
 						sub(/[[:space:]]*#.*$/, "", item)
 						if (item ~ /^[A-Za-z0-9._-]+:/ && item !~ /^https?:/) cross=1
+						else if (item != "") anchors = (anchors == "" ? item : anchors "|" item)
 					}
 				}
-				END { printf "%s\t%s\t%s\t%s\t%s\t%s\t%d\n", repo, file, st, pr, up, sc, cross }
+				END { printf "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", repo, file, st, pr, up, sc, cross, anchors, root }
 			' "$f" >> "$inv_tsv"
 		done
 	done <<-EOF
@@ -316,7 +317,7 @@ if [ "$fbs" -gt 0 ]; then
 	fi
 
 	echo
-	echo "-- polish candidates (high-load, low-hit: ignored >= 2 and > used — retrieved but not helping; fix description/body first; INDEX is generated, not listed) --"
+	echo "-- polish candidates (high-load, low-hit: ignored >= 2 and > used — retrieved but not helping; each with a fix prescription; INDEX is generated, not listed) --"
 	jq -s -r "${JQARGS[@]}" "$JQDEF"'
 		[.[] | select(.event=="kb_feedback") | select((kbkey | endswith("/INDEX.md")) | not)]
 		| group_by(kbkey)
@@ -327,7 +328,28 @@ if [ "$fbs" -gt 0 ]; then
 			| { k: $k, u: $u, i: $i })
 		| sort_by(-.i)
 		| if length == 0 then "  (none)" else .[] | "  ignored \(.i) / used \(.u)   \(.k)" end
-	' "$tmp" 2>/dev/null
+	' "$tmp" 2>/dev/null | while IFS= read -r line; do
+		printf '%s\n' "$line"
+		case "$line" in "  (none)") continue ;; esac
+		# Prescription: cross the ignored signal with the write-time smells that cause it (the
+		# same checks gen --check lints), so governance gets a concrete action, not just a number
+		key=${line##* }
+		repo=${key%%/*}
+		file=${key#*/}
+		row=$(awk -F'\t' -v r="$repo" -v f="$file" '$1 == r && $2 == f { print; exit }' "$inv_tsv" 2>/dev/null)
+		[ -n "$row" ] || continue
+		anchors=$(printf '%s' "$row" | cut -f8)
+		kpath="$(printf '%s' "$row" | cut -f9)/docs/ai-knowledge/$file"
+		rx=""
+		case "$anchors" in */\|* | */) rx="${rx}directory anchor → narrow to the specific file(s) carrying the fact; " ;; esac
+		desc=$(awk '/^description:/ { sub(/^description:[[:space:]]*/, ""); print; exit }' "$kpath" 2>/dev/null)
+		printf '%s' "$desc" | grep -qiE 'read (this )?before (changing|touching|modifying|editing)|must[- ]read|always read|必读' && rx="${rx}catch-all description → rewrite to concrete symptoms/errors; "
+		[ "${#desc}" -gt 400 ] && rx="${rx}description bundles several topics → split into one entry per symptom family; "
+		klines=$(wc -l < "$kpath" 2>/dev/null | tr -d ' ')
+		[ "${klines:-0}" -gt 180 ] && rx="${rx}${klines} lines → split; "
+		[ -z "$rx" ] && rx="no structural smell — check whether the pushing sessions really concern this topic (a hot anchor file pushes on unrelated edits) or whether the body duplicates CLAUDE.md"
+		printf '      ↳ %s\n' "${rx% }"
+	done
 
 	if [ "$contra" -gt 0 ]; then
 		echo
@@ -441,6 +463,49 @@ else
 		echo "  (note: worktree streams are merged into main repos; legacy kb_load rows from umbrella-dir sessions lack an owning-repo field, so the list may still run slightly long)"
 	else
 		echo "  (none: every inventory entry has been loaded at least once)"
+	fi
+
+	# ---------- anchor drift: the code an entry anchors to changed after the entry was last updated ----------
+	# Dead anchors (file gone) are caught by gen --check; this catches the quieter case — the
+	# file is still there but has moved on since the knowledge was written. Commit count since
+	# `updated` per anchor, summed per entry. One `git log` per anchor: set LORE_STATS_SKIP_DRIFT=1
+	# to skip on very large inventories.
+	echo
+	if [ "${LORE_STATS_SKIP_DRIFT:-0}" = "1" ]; then
+		echo "-- anchor drift: skipped (LORE_STATS_SKIP_DRIFT=1) --"
+	else
+		echo "-- anchor drift (anchored code committed AFTER the entry's updated date — the code moved on; re-verify these first) --"
+		# One `git log` per repo (not per anchor): a date-stamped file list since the oldest
+		# `updated` in that repo, matched in awk against every entry's anchors (exact file, or
+		# prefix for directory anchors), counting commits dated after each entry's own `updated`.
+		# ~300 anchors used to mean ~300 git invocations (45s on a 27-repo umbrella); now 27.
+		drift=$(printf '%s' "$inv_roots" | awk 'NF' | while IFS= read -r root; do
+			oldest=$(awk -F'\t' -v r="$root" '$9 == r && $8 != "" && $5 != "" { print $5 }' "$inv_tsv" | sort | head -1)
+			[ -n "$oldest" ] || continue
+			git -C "$root" --no-optional-locks log --since="$oldest" --name-only --format='@%ad' --date=short 2>/dev/null |
+				awk -F'\t' -v root="$root" '
+					NR == FNR { if ($9 == root && $8 != "" && $5 != "") { n++; file[n] = $2; up[n] = $5; anc[n] = $8; repo[n] = $1 } next }
+					/^@/ { cur = substr($0, 2); c++; next }
+					NF == 0 { next }
+					{
+						for (i = 1; i <= n; i++) {
+							if (cur <= up[i] || seen[i, c]) continue
+							m = split(anc[i], A, "|")
+							for (j = 1; j <= m; j++) {
+								a = A[j]
+								if (a == "") continue
+								if (a == $0 || index($0, a "/") == 1 || (substr(a, length(a)) == "/" && index($0, a) == 1)) { cnt[i]++; seen[i, c] = 1; break }
+							}
+						}
+					}
+					END { for (i = 1; i <= n; i++) if (cnt[i] > 0) printf "%d\t  %d commit(s) since %s   %s/%s\n", cnt[i], cnt[i], up[i], repo[i], file[i] }
+				' "$inv_tsv" -
+		done | sort -rn | head -15 | cut -f2-)
+		if [ -n "$drift" ]; then
+			printf '%s\n' "$drift"
+		else
+			echo "  (none: no anchored file changed after its entry was last updated)"
+		fi
 	fi
 fi
 

@@ -259,5 +259,76 @@ else
 	echo "FAIL T14 sed rewrite gaps: $(grep -n 'record-write.sh\|export-summary' "$SEDX/memorize.md" | head -3)"; fail=1
 fi
 
+# T15 anchor drift: an entry whose anchored file was committed AFTER its `updated` date must
+# surface in the drift section with the commit count; an untouched anchor must not
+mkdir -p "$REPO/src/api"
+: > "$REPO/src/api/x.js"; : > "$REPO/src/api/quiet.js"
+git -C "$REPO" add -A >/dev/null 2>&1; git -C "$REPO" -c user.email=t@example.com -c user.name=t commit -q -m "add files" >/dev/null 2>&1
+cat > "$REPO/docs/ai-knowledge/drift.md" <<'EOF'
+---
+name: drift
+description: anchored file keeps changing after this was written
+scope: repo
+code-anchors:
+  - src/api/x.js
+status: fact
+provenance: test
+env: all
+promote: n/a
+updated: 2026-01-01
+---
+body
+EOF
+cat > "$REPO/docs/ai-knowledge/quiet.md" <<'EOF'
+---
+name: quiet
+description: anchored file untouched since this was written
+scope: repo
+code-anchors:
+  - src/api/quiet.js
+status: fact
+provenance: test
+env: all
+promote: n/a
+updated: 2099-01-01
+---
+body
+EOF
+printf 'changed\n' >> "$REPO/src/api/x.js"
+git -C "$REPO" add -A >/dev/null 2>&1; git -C "$REPO" -c user.email=t@example.com -c user.name=t commit -q -m "touch x" >/dev/null 2>&1
+out=$(cd "$REPO" && LORE_DATA_DIR="$FRESH" bash "$HERE/lore-stats.sh" codex 2>&1)
+if printf '%s' "$out" | grep -q 'commit(s) since 2026-01-01 .*drift.md' && ! printf '%s' "$out" | grep -q 'quiet.md (updated\|since 2099.*quiet.md'; then
+	echo "PASS T15 anchor drift lists the entry whose anchor changed after updated; untouched anchor absent"
+else
+	echo "FAIL T15 drift section: $(printf '%s' "$out" | grep -A3 'anchor drift' | head -4)"; fail=1
+fi
+
+# T16 polish prescription: an ignored-heavy entry with a directory anchor and a catch-all
+# description gets a ↳ line naming both smells
+cat > "$REPO/docs/ai-knowledge/broad.md" <<'EOF'
+---
+name: broad
+description: Read before changing anything under the API layer
+scope: repo
+code-anchors:
+  - src/api/
+status: fact
+provenance: test
+env: all
+promote: n/a
+updated: 2026-01-01
+---
+body
+EOF
+for sid in q1 q2 q3; do
+	printf '{"event":"kb_feedback","repo":"%s","session":"%s","file":"%s:broad.md","verdict":"ignored","ts":"%s"}\n' "$RB" "$sid" "$RB" "$NOW" >> "$LORE_DATA_DIR/metrics.jsonl"
+done
+out=$(cd "$REPO" && bash "$HERE/lore-stats.sh" codex 2>&1)
+if printf '%s' "$out" | grep -q 'ignored 3 / used 0 .*broad.md' && printf '%s' "$out" | grep -q '↳ .*directory anchor' && printf '%s' "$out" | grep -q 'catch-all description'; then
+	echo "PASS T16 polish candidate carries a prescription naming directory anchor + catch-all description"
+else
+	echo "FAIL T16 prescription: $(printf '%s' "$out" | grep -A1 'broad.md' | head -3)"; fail=1
+fi
+
 [ $fail -eq 0 ] && echo "== all passed ==" || echo "== failures =="
 exit $fail

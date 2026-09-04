@@ -17,7 +17,7 @@ on:
       # every PR if you want anchor breakage caught immediately.
 env:
   LORE_PLUGIN_REPO: notverysalty/lore-plugin   # the public lore-plugin repo (owner/name)
-  LORE_PLUGIN_REF: main   # pin to a release tag (e.g. v0.1.0) for reproducible CI
+  LORE_PLUGIN_REF: main   # pin to a release tag (e.g. v0.2.0) for reproducible CI
 jobs:
   check:
     runs-on: ubuntu-latest

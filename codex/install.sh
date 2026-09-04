@@ -14,7 +14,7 @@ SKILLS_DST="$HOME/.agents/skills"
 LEGACY_SKILLS="$HOME/.codex/skills"
 SCRIPTS_DST="$HOME/.codex/lore/scripts"
 HOOKS="$HOME/.codex/hooks.json"
-SKILLS=(memorize init knowledge-consolidate resolve-merge set-language)
+SKILLS=(memorize init knowledge-consolidate resolve-merge set-language harvest)
 
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required to merge hooks.json"; exit 1; }
 
@@ -95,6 +95,7 @@ for s in "${SKILLS[@]}"; do
 		-e 's/lore:knowledge-consolidate/lore-knowledge-consolidate/g' \
 		-e 's/lore:resolve-merge/lore-resolve-merge/g' \
 		-e 's/lore:set-language/lore-set-language/g' \
+		-e 's/lore:harvest/lore-harvest/g' \
 		-e 's|/lore:stats|lore-stats.sh|g' \
 		-e "s|<engine-scripts>|$scripts_esc|g" \
 		-e 's|/record-write.sh\([" ]*\) written|/record-write.sh\1 --format=codex written|g' \
@@ -117,7 +118,7 @@ mkdir -p "$SCRIPTS_DST"
 cp "$PLUGIN_DIR/scripts/memorize-gate.sh" "$PLUGIN_DIR/scripts/record-feedback.sh" \
 	"$PLUGIN_DIR/scripts/record-write.sh" "$PLUGIN_DIR/scripts/push-knowledge.sh" \
 	"$PLUGIN_DIR/scripts/session-start.sh" "$PLUGIN_DIR/scripts/lore-stats.sh" \
-	"$PLUGIN_DIR/scripts/gen-knowledge-index.mjs" "$SCRIPTS_DST/"
+	"$PLUGIN_DIR/scripts/gen-knowledge-index.mjs" "$PLUGIN_DIR/scripts/lore-doctor.sh" "$SCRIPTS_DST/"
 chmod +x "$SCRIPTS_DST"/*.sh
 
 # 3. Merge ~/.codex/hooks.json (existing hooks preserved, idempotent)
@@ -145,7 +146,7 @@ os.replace(tmp, hp)
 PY
 
 echo "✓ lore installed for Codex:"
-echo "  skills → $SKILLS_DST/{lore-memorize,lore-init,lore-knowledge-consolidate,lore-resolve-merge,lore-set-language}"
+echo "  skills → $SKILLS_DST/{lore-memorize,lore-init,lore-knowledge-consolidate,lore-resolve-merge,lore-set-language,lore-harvest}"
 echo "  scripts → $SCRIPTS_DST"
 echo "  hooks → $HOOKS (SessionStart + Stop gate + PostToolUse path push, codex mode)"
 echo
