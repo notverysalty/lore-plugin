@@ -21,7 +21,7 @@ What counts as knowledge here: **facts you cannot derive from the code** — imp
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph session["One coding session"]
     A["SessionStart<br/>baseline: index pointer, session id"] --> B["Agent works"]
     B -->|"touches a file matching<br/>an entry's code-anchor"| C["path rule pushes that entry<br/>(a tracked load)"]
@@ -33,7 +33,7 @@ flowchart LR
   end
   F -->|writes| K[("docs/ai-knowledge/*.md")]
   K --> H["generator<br/>INDEX.md · gate files · path rules"]
-  H --> I["normal code PR<br/>human review"]
+  H --> I["normal code PR · human review"]
   I --> K
   G --> M[("local metrics.jsonl")]
   M --> S[/"/lore:stats<br/>funnel · polish prescriptions<br/>anchor drift · never-loaded"/]

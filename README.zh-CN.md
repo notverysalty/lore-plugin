@@ -21,7 +21,7 @@
 ## 运行方式
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph session["一次编码会话"]
     A["SessionStart<br/>基线：索引指针、会话 id"] --> B["Agent 干活"]
     B -->|"碰到匹配某条目<br/>code-anchor 的文件"| C["路径规则推送该条目<br/>（一次被追踪的加载）"]
@@ -33,7 +33,7 @@ flowchart LR
   end
   F -->|写入| K[("docs/ai-knowledge/*.md")]
   K --> H["生成器<br/>INDEX.md · 门禁文件 · 路径规则"]
-  H --> I["普通代码 PR<br/>人工评审"]
+  H --> I["普通代码 PR · 人工评审"]
   I --> K
   G --> M[("本机 metrics.jsonl")]
   M --> S[/"/lore:stats<br/>漏斗 · 打磨处方<br/>锚点漂移 · 从未被读"/]
