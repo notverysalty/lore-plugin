@@ -18,6 +18,46 @@ A knowledge engine for AI coding agents: after every substantial coding session,
 
 What counts as knowledge here: **facts you cannot derive from the code** — implicit business rules, cross-repo conventions, pitfalls with causes, and anti-knowledge ("the model assumes X, the truth is Y"). Code structure, schemas, and task status are explicitly rejected by the capture rubric.
 
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph session["One coding session"]
+    A["SessionStart<br/>baseline: index pointer, session id"] --> B["Agent works"]
+    B -->|"touches a file matching<br/>an entry's code-anchor"| C["path rule pushes that entry<br/>(a tracked load)"]
+    C --> B
+    B --> D{"Stop gate:<br/>substantial session?"}
+    D -->|no| E["End"]
+    D -->|yes| F["lore:memorize<br/>rubric → dedupe → write,<br/>or ‘nothing to save’"]
+    F --> G["judge each tracked load:<br/>used / ignored / contradicted"]
+  end
+  F -->|writes| K[("docs/ai-knowledge/*.md")]
+  K --> H["generator<br/>INDEX.md · gate files · path rules"]
+  H --> I["normal code PR<br/>human review"]
+  I --> K
+  G --> M[("local metrics.jsonl")]
+  M --> S[/"/lore:stats<br/>funnel · polish prescriptions<br/>anchor drift · never-loaded"/]
+  S --> N["lore:knowledge-consolidate<br/>monthly: refresh · split · retire · promote"]
+  N --> K
+```
+
+1. **Onboard once.** `/lore:init` creates `docs/ai-knowledge/`. The directory's existence is the opt-in marker: every hook checks for it first and does nothing elsewhere.
+2. **Retrieve on demand.** `INDEX.md` costs one line per entry. When the agent touches a file that matches an entry's `code-anchors`, the path-scoped rule pushes that entry into context — each push is a tracked load.
+3. **Capture at wrap-up.** The Stop gate fires only for substantial sessions. `lore:memorize` runs the rubric, dedupes against the index, and writes at most a couple of files — or reports "nothing to save", which is a legitimate outcome.
+4. **Judge what was loaded.** The same wrap-up marks every tracked load used, ignored, or contradicted. That verdict is the signal everything downstream runs on.
+5. **Review like code.** The generator rebuilds the index, the gate files, and the rules; knowledge and artifacts ride the normal PR, and the CI `--check` backstops drift.
+6. **Govern monthly.** `/lore:stats` turns the metrics into prescriptions, anchor drift, and retirement candidates; `lore:knowledge-consolidate` acts on them and promotes cross-repo facts to the team's memory layer.
+
+## Design principles
+
+- **Knowledge follows the code.** An entry lives in the repo whose code change would invalidate it, anchored to specific files. Anchors are both the retrieval trigger and the drift detector.
+- **Only facts you cannot derive from the code.** The rubric rejects code structure, schemas, task state, and anything CLAUDE.md already says. "Nothing to save" is a first-class result.
+- **Knowledge is a lead, not the source of truth.** Agents verify against the anchored code before key decisions; when the two disagree, the code wins and the entry gets fixed in passing.
+- **Reviewed like code.** Plain markdown in normal PRs. Generated artifacts are rebuilt, never hand-edited, and writes are gated behind the skills so no agent silently pollutes the base.
+- **Retrieval on demand, not by default.** One index line per entry, plus a push only when the anchored code is touched. The base can grow without taxing every session; above a threshold the index groups itself.
+- **A measured loop.** Every load is judged at wrap-up; stats turn the verdicts into prescriptions, drift, and retirement candidates; consolidate consumes them monthly. Metrics stay on your machine unless the team opts in.
+- **Opt-in and runtime-agnostic.** Hooks do nothing in repos without `docs/ai-knowledge/`. The content is plain files any agent can read, and Claude Code and Codex share the same engine scripts.
+
 ## Quickstart
 
 ```
