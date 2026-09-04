@@ -95,7 +95,7 @@ updated: <YYYY-MM-DD, today>
 2. Capture telemetry (feeds the fire→capture conversion rate and time-to-first-use in /lore:stats): run once per **written/updated knowledge file**:
    `bash "<engine-scripts>/record-write.sh" written <filename.md> <session_id>`
    For cross-repo writes use `repo-dir-name:filename.md` to tag the owning repo; copy session_id verbatim from the gate instruction's trailing quoted value; omit it when the user ran /memorize manually without a gate.
-3. Refresh your per-user metrics rollup so team-wide stats ride the same PR (once per repo written to; it rewrites only your own `docs/ai-knowledge/.metrics/<user>.json`):
+3. **Only if** the target repo's `docs/ai-knowledge/lore.json` sets `"teamMetrics": true`: refresh your per-user metrics rollup so team-wide stats ride the same PR (once per repo written to; it rewrites only your own `docs/ai-knowledge/.metrics/<user>.json`). Team metrics are opt-in because the rollup commits your git user name and usage counts — the script writes nothing when the key is absent or false, and you never enable it on the team's behalf:
    `bash "<engine-scripts>/lore-stats.sh" export-summary <repo-root>`
 4. Constraint: at most 2 knowledge files per PR; suggest splitting beyond that.
 5. Do not commit — knowledge changes ride the same PR as code; the user decides when to commit.

@@ -12,7 +12,7 @@ Then assess adoption health from the numbers:
 - Polish candidates (ignored ≥ 2 and > used) → retrieved but not helping; each carries a ↳ prescription (directory anchor / catch-all description / bundled topics / oversized) — hand those to knowledge-consolidate.
 - Anchor drift (anchored code committed after the entry's `updated` date, ranked by commit count) → the file is still there but moved on; the top entries are the first to re-verify.
 - ⚠️ Contradicted follow-up + loop state: ✖ still-unresolved entries deserve priority verification and supersede/downgrade; ✔ re-used means the loop closed. This feeds the monthly consolidate.
-- Team rollups: event sections above are this machine only — this section aggregates every committed `docs/ai-knowledge/.metrics/<user>.json`. "Ignored by everyone" is the strongest polish/retire signal there is; few or no rollups committed → remind members that memorize/consolidate refresh them automatically.
+- Team rollups: event sections above are this machine only — this section aggregates every committed `docs/ai-knowledge/.metrics/<user>.json`. "Ignored by everyone" is the strongest polish/retire signal there is; no rollups committed → the repo has not opted in (`"teamMetrics": true` in `docs/ai-knowledge/lore.json`, a team decision); once it has, memorize/consolidate refresh them automatically.
 - Inventory: the longer `promote: pending` piles up, the more overdue the harvest; cross-repo anchor count reflects adoption; long time-to-first-use → new knowledge isn't reaching the retrieval surface.
 
 Finish with a one-sentence verdict + at most 3 actionable suggestions.

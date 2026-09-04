@@ -290,6 +290,7 @@ if (existsSync(configPath)) {
 		if (cfg.indexMode !== undefined && !['flat', 'grouped', 'auto'].includes(cfg.indexMode)) problems.push('lore.json: "indexMode" must be flat | grouped | auto');
 		if (cfg.indexGroupThreshold !== undefined && !(Number.isInteger(cfg.indexGroupThreshold) && cfg.indexGroupThreshold > 0)) problems.push('lore.json: "indexGroupThreshold" must be a positive integer');
 		if (cfg.promotionTarget !== undefined && typeof cfg.promotionTarget !== 'string') problems.push('lore.json: "promotionTarget" must be a string naming the team memory layer cross-repo knowledge is promoted to');
+		if (cfg.teamMetrics !== undefined && typeof cfg.teamMetrics !== 'boolean') problems.push('lore.json: "teamMetrics" must be true or false (opt-in for committing per-user usage rollups into the repo)');
 	} catch {
 		cfg = {};
 		problems.push('lore.json: not valid JSON');

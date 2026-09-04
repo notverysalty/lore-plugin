@@ -89,10 +89,10 @@ else
   echo "FAIL T6 a=$a b=$b"; fail=1
 fi
 # T7 invalid config value is a problem (check exit 1)
-printf '{"indexMode":"sideways","promotionTarget":42}' > "$T/docs/ai-knowledge/lore.json"
+printf '{"indexMode":"sideways","promotionTarget":42,"teamMetrics":"yes"}' > "$T/docs/ai-knowledge/lore.json"
 out=$(node "$GEN" "$T" --check 2>&1); rc=$?
-if [ $rc -eq 1 ] && printf '%s' "$out" | grep -q 'indexMode' && printf '%s' "$out" | grep -q 'promotionTarget'; then
-  echo "PASS T7 invalid lore.json values (indexMode, promotionTarget) fail --check"
+if [ $rc -eq 1 ] && printf '%s' "$out" | grep -q 'indexMode' && printf '%s' "$out" | grep -q 'promotionTarget' && printf '%s' "$out" | grep -q 'teamMetrics'; then
+  echo "PASS T7 invalid lore.json values (indexMode, promotionTarget, teamMetrics) fail --check"
 else
   echo "FAIL T7 rc=$rc"; printf '%s\n' "$out" | head -3; fail=1
 fi

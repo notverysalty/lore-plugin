@@ -132,6 +132,9 @@ if [ -n "$repo" ]; then
 	else pass "scale: $n entries (flat index)"; fi
 	if [ -f "$repo/docs/ai-knowledge/lore.json" ]; then
 		jq -e . "$repo/docs/ai-knowledge/lore.json" >/dev/null 2>&1 && pass "lore.json valid (language: $(jq -r '.language // "en"' "$repo/docs/ai-knowledge/lore.json"))" || fail "lore.json is not valid JSON"
+		# Team metrics are opt-in; surface the state so nobody is surprised by (or missing) committed rollups
+		tm=$(jq -r '.teamMetrics // false' "$repo/docs/ai-knowledge/lore.json" 2>/dev/null)
+		if [ "$tm" = true ]; then pass "team metrics: ON (per-user usage rollups are committed to docs/ai-knowledge/.metrics/ — a team decision)"; else pass "team metrics: off (default; opt-in with \"teamMetrics\": true in lore.json)"; fi
 	fi
 else
 	warnf "no onboarded repo at or above ${ROOT:-$PWD} (run lore:init to onboard one)"

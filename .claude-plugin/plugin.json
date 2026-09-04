@@ -1,6 +1,6 @@
 {
 	"name": "lore",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "A knowledge engine for AI coding agents — captures 'facts you cannot derive from the code' at session end, stores them as reviewable markdown in each repo (docs/ai-knowledge/), retrieves them on demand via path-scoped rules, and closes the loop with usage metrics. Skills: init / memorize / knowledge-consolidate / resolve-merge / set-language / harvest, commands /lore:stats and /lore:doctor, SessionStart/Stop gates and an index generator. See README.md.",
 	"author": {
 		"name": "yisakomi"

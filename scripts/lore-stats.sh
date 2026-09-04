@@ -194,11 +194,21 @@ MAINS_JSON=$(printf '%s' "$inv_roots" | awk 'NF' | while IFS= read -r p; do base
 JQARGS=(--argjson wtmap "$WTMAP_JSON" --argjson mains "$MAINS_JSON")
 
 # ---------- export-summary: write this machine's per-user rollup into the repo ----------
-# The rollup is the team-metrics carrier: local metrics never leave the machine, but these
+# The rollup is the team-metrics carrier (opt-in via lore.json "teamMetrics": true — it carries
+# the exporter's user name and usage counts): local metrics never leave the machine, but these
 # counts ride normal PRs, and every stats run aggregates all committed rollups — team-wide
 # visibility with zero sync infrastructure. Worktree events merge into the main repo via
 # nrepo, so exporting from a worktree attributes correctly.
 if [ "$EXPORT" = 1 ]; then
+	# Team metrics are opt-in per repo: the rollup commits the exporter's git user name and
+	# per-file usage counts into the repository, so the repo has to say so explicitly in
+	# lore.json. Absent, false, or unparsable config → write nothing and say so (exit 0 so
+	# the memorize/consolidate flows that call this unconditionally are not disturbed).
+	cfg="$EXPORT_ROOT/docs/ai-knowledge/lore.json"
+	if ! { [ -f "$cfg" ] && jq -e '.teamMetrics == true' "$cfg" >/dev/null 2>&1; }; then
+		echo "[lore-stats] team metrics are off for this repo — nothing written (opt-in: set \"teamMetrics\": true in docs/ai-knowledge/lore.json)"
+		exit 0
+	fi
 	user="${LORE_METRICS_USER:-$(git -C "$EXPORT_ROOT" config user.name 2>/dev/null)}"
 	user="${user:-$(whoami 2>/dev/null)}"
 	[ -n "$user" ] || { echo "export-summary: cannot determine a user name (set LORE_METRICS_USER)"; exit 1; }
@@ -445,7 +455,7 @@ else
 	elif [ "$rollup_files" -gt 0 ]; then
 		echo "-- team rollups: ${rollup_files} file(s) committed, all empty (no events in their windows) --"
 	else
-		echo "-- team rollups: none committed yet (each member's memorize/consolidate refreshes docs/ai-knowledge/.metrics/<user>.json automatically; manual: lore-stats.sh export-summary) --"
+		echo "-- team rollups: none committed (opt-in per repo: \"teamMetrics\": true in docs/ai-knowledge/lore.json; once on, each member's memorize/consolidate refreshes docs/ai-knowledge/.metrics/<user>.json automatically) --"
 	fi
 
 	echo

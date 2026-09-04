@@ -160,6 +160,15 @@ for e in \
 	"{\"event\":\"kb_load\",\"repo\":\"other\",\"kb_repo\":\"other\",\"file\":\"foreign.md\",\"reason\":\"include\",\"session\":\"sz\",\"ts\":\"$NOW\"}"; do
 	printf '%s\n' "$e" >> "$LORE_DATA_DIR/metrics.jsonl"
 done
+# T10a team metrics are opt-in: without "teamMetrics": true in lore.json, export-summary must
+# write nothing (not even the .metrics dir), say so, and still exit 0
+out=$(cd "$T" && LORE_METRICS_USER=alice bash "$HERE/lore-stats.sh" export-summary "$REPO" 2>&1); rc=$?
+if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q 'team metrics are off' && [ ! -e "$REPO/docs/ai-knowledge/.metrics" ]; then
+	echo "PASS T10a export-summary without opt-in: nothing written, exit 0, explains how to opt in"
+else
+	echo "FAIL T10a rc=$rc exists=$([ -e "$REPO/docs/ai-knowledge/.metrics" ] && echo yes || echo no): $out"; fail=1
+fi
+printf '{"language":"en","teamMetrics":true}\n' > "$REPO/docs/ai-knowledge/lore.json"
 ( cd "$T" && LORE_METRICS_USER=alice bash "$HERE/lore-stats.sh" export-summary "$REPO" >/dev/null 2>&1 )
 RJ="$REPO/docs/ai-knowledge/.metrics/alice.json"
 if [ -f "$RJ" ] && jq -e '
@@ -213,6 +222,7 @@ git -C "$MAIN" init -q
 git -C "$MAIN" -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m init
 git -C "$MAIN" worktree add -q "$T/wt-feature" -b feature 2>/dev/null
 mkdir -p "$T/wt-feature/docs/ai-knowledge"
+printf '{"teamMetrics":true}\n' > "$T/wt-feature/docs/ai-knowledge/lore.json"
 printf '{"event":"kb_load","repo":"mainrepo","kb_repo":"mainrepo","file":"demo.md","reason":"include","session":"sw","ts":"%s"}\n' "$NOW" >> "$LORE_DATA_DIR/metrics.jsonl"
 ( cd "$T" && LORE_METRICS_USER=carol bash "$HERE/lore-stats.sh" export-summary "$T/wt-feature" >/dev/null 2>&1 )
 WJ="$T/wt-feature/docs/ai-knowledge/.metrics/carol.json"

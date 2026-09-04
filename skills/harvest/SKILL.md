@@ -35,7 +35,7 @@ A fresh knowledge base has a cold-start problem: value only compounds after week
    - A harvested entry may say less than the source: keep the fact, the cause, and the consequence; leave narrative and timelines behind.
 
 7. **Rebuild + telemetry**: `<engine-scripts>` = the absolute scripts path injected into context when this skill was invoked (the `lore engine scripts:` line; on Codex the installer bakes the real path in).
-   `node "<engine-scripts>/gen-knowledge-index.mjs" <repo-root>` — then, once per written file, `bash "<engine-scripts>/record-write.sh" written <filename.md>`, and finally `bash "<engine-scripts>/lore-stats.sh" export-summary <repo-root>` to refresh your metrics rollup.
+   `node "<engine-scripts>/gen-knowledge-index.mjs" <repo-root>` — then, once per written file, `bash "<engine-scripts>/record-write.sh" written <filename.md>`, and finally — only if `lore.json` sets `"teamMetrics": true` (team metrics are opt-in; the script is a no-op otherwise) — `bash "<engine-scripts>/lore-stats.sh" export-summary <repo-root>` to refresh your metrics rollup.
 
 8. **Report.** An onboarding-scale harvest will exceed the everyday "≤ 2 knowledge files per PR" guideline — say so, and suggest splitting the PR by code area so reviewers can actually review. End with the wrap-up card:
 

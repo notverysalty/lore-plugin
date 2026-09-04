@@ -48,7 +48,7 @@
 | hook `Stop` | 双层闸门第一层：只有实质工作量的会话才触发沉淀评估；同时收集本会话已加载知识的 used/ignored/contradicted 回判 |
 | hook `PreToolUse` + `PostToolUse` | 写入门禁：只有 lore skill 的指令在上下文里时知识文件才可写（hook 发放的限次授权）；生成物一律禁止手改 |
 | hook `InstructionsLoaded` | 异步埋点：记录知识文件被加载（读取率度量） |
-| `scripts/lore-stats.sh`（`/lore:stats`，支持 `--since=YYYY-MM-DD`） | 沉淀转化漏斗 / 读取有效性与 14 天趋势 / 打磨候选**（每条附修复处方）** / 矛盾追踪 / 团队汇总 / **锚点演进**（锚定代码在知识写后又改过）/ 库存（pending 堆积、从未被读、time-to-first-use）；`export-summary` 把你的个人团队汇总写进仓库 |
+| `scripts/lore-stats.sh`（`/lore:stats`，支持 `--since=YYYY-MM-DD`） | 沉淀转化漏斗 / 读取有效性与 14 天趋势 / 打磨候选**（每条附修复处方）** / 矛盾追踪 / 团队汇总 / **锚点演进**（锚定代码在知识写后又改过）/ 库存（pending 堆积、从未被读、time-to-first-use）；`export-summary` 仅在仓库开启 `teamMetrics` 后把你的个人团队汇总写进仓库 |
 | `scripts/gen-knowledge-index.mjs` | 从 frontmatter 生成 INDEX.md（平铺；仓库长大后按代码区域分组）+ `.claude/rules/knowledge/*.md` + 写入门禁文件；校验 frontmatter 并 lint 写入时的坏味道（宽句 description、目录锚、超长文件——`--strict` 升级为错误）；写模式带并发锁；`--check` 供 CI |
 
 ## 行为边界（opt-in 设计）
@@ -93,14 +93,14 @@ PR 里评审知识文件的三问：事实对不对？有没有 code-anchors？�
 
 所有原始度量**只存本机、零上报**：事件（闸门触发、加载、回判、写入）追加到本机的 `~/.claude/plugins/data/lore/metrics.jsonl`（Codex 为 `~/.codex/lore-data/metrics.jsonl`）——仅含仓名、知识文件名、session id；从不含文件内容。不向任何地方上传。`/lore:stats` 读这些文件。覆盖率说明：加载事件取决于 runtime 暴露的观测点（Claude Code：索引/rules 加载；Codex：路径推送命中），回判只在触发 Stop 闸门的实质会话中收集。
 
-### 团队度量——随仓库走的汇总
+### 可选：团队汇总（默认关闭）
 
-本机流水回答不了「这条知识有没有帮到*团队*」，所以 lore 通过团队本来就在同步的通道——**git**——共享一份隐私安全的摘要。
+除非仓库显式开启，不会有任何内容共享给团队。在 `docs/ai-knowledge/lore.json` 里设置 `"teamMetrics": true` 之后，memorize 与 knowledge-consolidate 才会同时刷新 `docs/ai-knowledge/.metrics/<user>.json`，随知识所在的 PR 一起提交。
 
-- `lore-stats.sh export-summary` 把你的本机流水蒸馏成 `docs/ai-knowledge/.metrics/<user>.json`——滚动 90 天窗口内的 per-file 计数（loads / used / ignored / contradicted / written）。**不含 session id、不含时间线、不含内容。**但要清楚汇总*会*提交进仓库的内容：你的 git 用户名、per-file 计数、闸门触发数、导出日期——如果这超出团队想共享的范围，把 `LORE_METRICS_USER` 设成代号，或跳过导出。memorize 和 knowledge-consolidate 会自动刷新它，随知识本身同一个 PR 走；零同步基建、零成员配置。
-- `/lore:stats` 聚合所有已提交的汇总为**团队汇总**段（团队最常用条目 top、「全员 ignored」的打磨信号），且**从未被读**清单在任何队友的汇总显示过读取时就不再误报——同事天天在用的知识不会被标成淘汰候选。
-- 汇总是生成物：`.gitattributes` 标 `linguist-generated`（不设 `merge=union`——per-user 文件天然无冲突），写入门禁拒绝手改。
-
+- **文件包含什么**：你的 git 用户名（或 `LORE_METRICS_USER`）、最近 90 天每个知识文件的 loads / used / ignored / contradicted / written 计数、闸门触发次数、导出日期。不含 session id，不含时间线，不含知识内容。
+- **用来做什么**：`/lore:stats` 把所有已提交的汇总聚合成团队段（最常用条目、全员忽略的条目），并且只要任一队友的汇总显示过读取，就不再把该条目报成「从未被读」。
+- **关闭时（默认）**：`export-summary` 不写任何文件并明确提示。开启前请团队一起决定，公开仓库里的汇总同样是公开的。
+- 汇总文件是生成物：标记 `linguist-generated`，写入门禁拒绝手改，由每次导出重建。
 ### 跨仓知识与团队记忆层
 
 lore 是**代码锚定**的那一层：知识归属某个仓、随它的 PR 走、在你触碰它描述的代码时被推送。跨仓事实（`scope: cross-repo`、`promote: pending`）不该在这里堆积——它们属于团队记忆层（Hindsight / Mem0 这类经 MCP 暴露的记忆库、共享知识仓、wiki 空间）。在 `lore.json` 用 `"promotionTarget"` 指明这一层，`knowledge-consolidate` 就会把 pending 条目以紧凑的持久事实上行到那里，仓内文件保留为锚定细节。两层是互补而非竞争：记忆系统在 *agent 主动问* 的时候回答；lore 在 *agent 触碰代码* 的时候回答。

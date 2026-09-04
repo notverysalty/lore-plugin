@@ -48,7 +48,7 @@ Then, in a repo you care about:
 | hook `Stop` | Layer 1 of the two-layer gate: only sessions with substantial work trigger the capture evaluation; also collects used/ignored/contradicted verdicts for knowledge loaded this session |
 | hook `PreToolUse` + `PostToolUse` | The write gate: knowledge files are writable only while a lore skill's instructions are in context (turn-scoped, hook-issued grant); generated artifacts are never hand-editable |
 | hook `InstructionsLoaded` | Async telemetry: records knowledge files being loaded (read-rate metric) |
-| `scripts/lore-stats.sh` (`/lore:stats`, `--since=YYYY-MM-DD`) | Capture funnel / read effectiveness & 14-day trend / polish candidates **with a fix prescription each** / contradiction follow-up / team rollups / **anchor drift** (anchored code changed after the entry was written) / inventory (pending backlog, never-loaded, time-to-first-use); `export-summary` writes your per-user team rollup into the repo |
+| `scripts/lore-stats.sh` (`/lore:stats`, `--since=YYYY-MM-DD`) | Capture funnel / read effectiveness & 14-day trend / polish candidates **with a fix prescription each** / contradiction follow-up / team rollups / **anchor drift** (anchored code changed after the entry was written) / inventory (pending backlog, never-loaded, time-to-first-use); `export-summary` writes your per-user team rollup into the repo, only where the repo opts in (`teamMetrics`) |
 | `scripts/gen-knowledge-index.mjs` | Generates INDEX.md (flat, or grouped by code area once a repo grows) + `.claude/rules/knowledge/*.md` + the write-gate files from frontmatter; validates frontmatter and lints write-time smells (catch-all descriptions, directory anchors, oversized files — `--strict` makes them errors); concurrency-locked writes; `--check` mode for CI |
 
 ## Behavior boundaries (opt-in by design)
@@ -91,16 +91,16 @@ Reviewing a knowledge file in a PR — three questions: Is the fact true? Does i
 
 ## Metrics & privacy
 
-All raw metrics are **local-only, zero telemetry**: events (gate fires, loads, verdicts, writes) append to `~/.claude/plugins/data/lore/metrics.jsonl` on your machine (`~/.codex/lore-data/metrics.jsonl` for Codex) — repo names, knowledge filenames, and session ids; never file contents. Nothing is uploaded anywhere. `/lore:stats` reads these files. Coverage caveat: loads are observed where the runtime exposes them (Claude Code: index/rules loads; Codex: path-push hits), and verdicts are collected only in sessions substantial enough to trip the Stop gate.
+All raw metrics are **local-only, zero telemetry**: events (gate fires, loads, verdicts, writes) append to `~/.claude/plugins/data/lore/metrics.jsonl` on your machine (`~/.codex/lore-data/metrics.jsonl` for Codex) — repo names, knowledge filenames, and session ids; never file contents. Nothing is uploaded anywhere, and nothing is shared with the team unless a repo explicitly opts in (next section). `/lore:stats` reads these files. Coverage caveat: loads are observed where the runtime exposes them (Claude Code: index/rules loads; Codex: path-push hits), and verdicts are collected only in sessions substantial enough to trip the Stop gate.
 
-### Team metrics — rollups that ride the repo
+### Optional: team rollups (off by default)
 
-Local streams alone can't answer "is this knowledge helping the *team*", so lore shares a privacy-safe summary through the channel the team already syncs: **git**.
+Nothing is shared with the team unless the repo opts in. With `"teamMetrics": true` in `docs/ai-knowledge/lore.json`, memorize and knowledge-consolidate also refresh `docs/ai-knowledge/.metrics/<user>.json`, and it ships in the same PR as the knowledge.
 
-- `lore-stats.sh export-summary` distills your local stream into `docs/ai-knowledge/.metrics/<user>.json` — per-file counts (loads / used / ignored / contradicted / written) over a rolling 90-day window. **No session ids, no timelines, no content.** Be aware of what the rollup *does* commit into the repo: your git user name, per-file counts, gate-fire counts, and the export date — if that is more than your team wants shared, set `LORE_METRICS_USER` to a handle or skip the export step. memorize and knowledge-consolidate refresh it automatically, so it rides the same PR as the knowledge itself; zero sync infrastructure, zero per-member setup.
-- `/lore:stats` aggregates every committed rollup into a **team rollups** section (top team-used entries, "ignored by everyone" polish signals), and the **never loaded** list counts a file as loaded if *any* teammate's rollup shows reads — so knowledge a colleague uses daily is never misreported as a retirement candidate.
-- The rollups are generated artifacts: `linguist-generated` in `.gitattributes` (no `merge=union` — per-user files never conflict), write-gated against hand edits.
-
+- **What the file contains**: your git user name (or `LORE_METRICS_USER`), per-file counts for loads / used / ignored / contradicted / written over the last 90 days, gate-fire counts, and the export date. No session ids, no timelines, no knowledge content.
+- **What it is for**: `/lore:stats` aggregates every committed rollup into a team section (most-used entries, entries ignored by everyone) and stops reporting an entry as "never loaded" once any teammate's rollup shows reads.
+- **Off (the default)**: `export-summary` writes nothing and says so. Decide as a team before turning it on — in a public repository the rollups are public too.
+- The files are generated artifacts: marked `linguist-generated`, write-gated against hand edits, rebuilt by each export.
 ### Cross-repo knowledge and team memory layers
 
 lore is the **code-anchored** layer: knowledge that belongs to a repo, rides its PRs, and is pushed when you touch the code it describes. Facts that span repos (`scope: cross-repo`, `promote: pending`) should not pile up here — they belong in a team memory layer (a Hindsight / Mem0-style memory bank exposed over MCP, a shared knowledge repo, a wiki space). Name that layer in `lore.json` as `"promotionTarget"`, and `knowledge-consolidate` promotes pending entries there as compact durable facts, keeping the in-repo file as the anchored detail. The two layers are complementary, not competing: memory systems answer *when the agent asks*; lore answers *when the agent touches the code*.
